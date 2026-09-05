@@ -40,8 +40,26 @@ cd ClaudeFleetBar
 open dist/ClaudeFleetBar.app
 ```
 
-macOS will ask for Keychain access once per account. Choose **Always Allow** so it
-does not prompt on every launch.
+macOS will ask for Keychain access once per account. Choose **Always Allow**.
+
+> **If it re-asks on every build**, that is the ad-hoc signature. The login
+> Keychain ties an access grant to the code hash, and an ad-hoc seal produces a
+> new one each build — so every rebuild looks like a different app. Sign with a
+> Developer ID instead, whose designated requirement is stable across builds:
+>
+> ```sh
+> DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)" ./scripts/build-app.sh
+> ```
+>
+> With an Apple Developer account you can also notarize, so Gatekeeper accepts it
+> on any Mac:
+>
+> ```sh
+> export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)"
+> export APPLE_ID="you@example.com" APPLE_TEAM_ID="TEAMID"
+> export APPLE_APP_PASSWORD="app-specific-password"   # or @keychain:AC_PASSWORD
+> ./scripts/notarize.sh
+> ```
 
 To start it at login: System Settings → General → Login Items → add
 `dist/ClaudeFleetBar.app`.
