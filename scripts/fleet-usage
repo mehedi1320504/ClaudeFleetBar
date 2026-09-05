@@ -29,6 +29,25 @@ def pct(window):
     return f"{window['utilization']:.0f}%" if window else "--"
 
 
+def describe_source(account, now):
+    """Where a row's numbers came from, and how old they are when not live.
+
+    `origin` is "live", "stale" (the app's own last live read, kept through a
+    failed refresh) or "cache" (the CLI's file). Older snapshots carry only
+    the boolean `live`.
+    """
+    origin = account.get("origin") or ("live" if account.get("live") else None)
+    error = account.get("error")
+    if origin == "live":
+        return "live"
+    if origin is None:
+        return error or "no reading"
+    label = {"stale": "last live", "cache": "CLI cache"}.get(origin, origin)
+    age = ago(account.get("fetched_at"), now)
+    text = f"{label} {age} old" if age != "now" else f"{label} just now"
+    return f"{text} · {error}" if error else text
+
+
 def board(data, now):
     head = f"  {'acct':<8}{'free':>5}   {'5h':>5} {'resets':>8}    {'7d':>5} {'resets':>8}   source"
     print(head)
@@ -38,7 +57,7 @@ def board(data, now):
         seven = account.get("seven_day") or {}
         free = account.get("headroom")
         mark = "▸" if account["label"] == data.get("recommended") else " "
-        source = "live" if account.get("live") else (account.get("error") or "cached")
+        source = describe_source(account, now)
         free_text = f"{free:.0f}%" if free is not None else "--"
         print(
             f"{mark} {account['label']:<8}{free_text:>5}   "

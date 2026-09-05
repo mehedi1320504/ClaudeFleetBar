@@ -26,12 +26,16 @@ struct FleetBoardView: View {
             } else if store.usages.isEmpty {
                 emptyState
             } else {
-                if let best = Ranking.recommended(store.usages) {
+                if let best = Ranking.recommended(store.usages, now: now) {
                     RecommendedCard(usage: best, now: now,
                                     isCopied: copiedID == best.id) { copy(best) }
                     rest(excluding: best)
                 } else {
-                    allSpent
+                    if store.usages.allSatisfy({ $0.failure != nil }) {
+                        unreadable
+                    } else {
+                        allSpent
+                    }
                     rest(excluding: nil)
                 }
             }
@@ -58,7 +62,7 @@ struct FleetBoardView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.subtle)
             }
-            Button { Task { await store.refresh() } } label: {
+            Button { Task { await store.refresh(force: true) } } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.plain)
@@ -93,7 +97,7 @@ struct FleetBoardView: View {
 
     @ViewBuilder
     private func rest(excluding best: AccountUsage?) -> some View {
-        let others = Ranking.runOrder(store.usages).filter { $0.id != best?.id }
+        let others = Ranking.runOrder(store.usages, now: now).filter { $0.id != best?.id }
         if !others.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(best == nil ? "ACCOUNTS" : "THEN")
@@ -193,9 +197,32 @@ struct FleetBoardView: View {
 
     private var soonestReset: Date? {
         store.usages
-            .compactMap { Ranking.bindingWindow($0)?.window.resetsAt }
+            .compactMap { Ranking.bindingWindow($0, now: now)?.window.resetsAt }
             .filter { $0 > now }
             .min()
+    }
+
+    /// Every read failed. That is not "every account is spent" — the moon
+    /// card — and saying so sent people to bed with quota left. When the
+    /// usage endpoint throttles all five, the accounts themselves are fine.
+    private var unreadable: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Palette.tint(forUsed: 92))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Couldn't read usage").font(.system(size: 13, weight: .semibold))
+                Text(store.usages.allSatisfy({ $0.failure?.retryAt != nil })
+                     ? "The usage API is throttling every account. Last readings below, with their age."
+                     : "No account answered. Last readings below, with their age.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.cardFill))
     }
 
     private var loadingState: some View {

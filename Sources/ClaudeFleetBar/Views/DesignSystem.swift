@@ -15,6 +15,15 @@ enum Format {
         return "\(seconds)s"
     }
 
+    /// A window's rollover: counts down while ahead, reads `now` in the
+    /// minute around it, and `passed` once the reading describes a window
+    /// that has already rolled over — so a stale row cannot show a countdown
+    /// that is really a reset from yesterday.
+    static func resetCountdown(to date: Date, now: Date = .now) -> String {
+        if now.timeIntervalSince(date) > 60 { return "passed" }
+        return countdown(to: date, now: now)
+    }
+
     /// Wall-clock reset time in the viewer's own timezone.
     static func clock(_ date: Date) -> String {
         let f = DateFormatter()

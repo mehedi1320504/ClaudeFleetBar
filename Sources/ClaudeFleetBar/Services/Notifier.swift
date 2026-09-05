@@ -13,8 +13,17 @@ final class Notifier: @unchecked Sendable {
 
     private enum Level: Equatable { case free, busy, spent, unusable }
 
+    typealias Sink = @Sendable (_ title: String, _ body: String) -> Void
+
     private var levels: [String: Level] = [:]
     private var authorized = false
+    private let sink: Sink?
+
+    /// `sink` replaces the system notification center — for tests, which run
+    /// without a bundle identifier and cannot touch `UNUserNotificationCenter`.
+    init(sink: Sink? = nil) {
+        self.sink = sink
+    }
 
     var isEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "alertsEnabled") as? Bool ?? true }
@@ -31,6 +40,12 @@ final class Notifier: @unchecked Sendable {
     func reportTransitions(from previous: [AccountUsage], to current: [AccountUsage]) {
         let wasEmpty = previous.isEmpty
         for usage in current {
+            // A failed read is not a change in the account; it is a change in
+            // our ability to see it. A throttled usage endpoint used to post
+            // "Account E is out — resets in unknown", then "freed up" on the
+            // next successful read, for an account that never moved.
+            guard usage.failure == nil else { continue }
+
             let level = Self.level(for: usage)
             let old = levels[usage.id]
             levels[usage.id] = level
@@ -72,6 +87,10 @@ final class Notifier: @unchecked Sendable {
     }
 
     private func post(title: String, body: String, id: String) {
+        if let sink {
+            sink(title, body)
+            return
+        }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

@@ -23,6 +23,13 @@ countdown to each reset.
 - **Auto-detects accounts.** Anything matching `~/.claude-account-*`, plus `~/.claude`.
   A sixth account works the moment you create it — no config to maintain.
 - **Live 5-hour and weekly usage** with utilization rings and reset countdowns.
+- **Survives a throttled usage API.** `/api/oauth/usage` rate-limits reads per
+  account, and answers `429` with `Retry-After: 0`. A throttled account keeps its
+  last live reading — labelled with its age, still ranked, still recommended while
+  the reading is under 15 minutes old — and backs off on its own (doubling from
+  the refresh interval, capped at 10 minutes) while the other accounts refresh on
+  schedule. A 429 is the endpoint saying "not so often", not the account being
+  spent, and the board says exactly that.
 - **A run order**, not just numbers: headroom is `100 − max(5h, weekly)`, ties break
   toward the lower weekly figure, since a 5-hour window refills in hours and a weekly
   one in days.
@@ -35,7 +42,9 @@ countdown to each reset.
 - **Read-only, always.** Credentials are read from the login Keychain and never
   written, refreshed or deleted. An expired token is reported, not repaired.
 - **JSON export** to `~/.cache/claude-fleet-bar/usage.json` so scripts can rank
-  accounts by measured headroom instead of probing blind.
+  accounts by measured headroom instead of probing blind. Each row carries its
+  `origin` (`live` / `stale` / `cache`), `fetched_at`, `age_seconds`, whether it
+  is `actionable`, and `retry_at` when the API is throttling it.
 - **Updates itself** via [Sparkle](https://sparkle-project.org), from this repo's
   GitHub Releases. It asks before installing — an update never restarts the app
   mid-task. Each release is EdDSA-signed, and the public key is compiled into the
@@ -119,15 +128,17 @@ CLAUDE_CONFIG_DIR="$HOME/.claude-account-$(fleet-usage best)" claude
 | Locate credentials | Claude Code keys its Keychain entry as `Claude Code-credentials-<first 8 hex of sha256(configDir)>`, so each config dir maps to its own item |
 | Read token | `SecItemCopyMatching` → `claudeAiOauth.accessToken` (read-only) |
 | Fetch usage | `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer …` and `anthropic-beta: oauth-2025-04-20` — the same endpoint the CLI uses to fill its own cache |
-| Fall back | On an expired or unreadable token, show `cachedUsageUtilization` from `.claude.json`, **labelled with its age** |
+| Fall back | When a read fails — a 429, a network error, an expired token — keep this app's own last live reading, labelled with its age; with none, show `cachedUsageUtilization` from `.claude.json`, labelled the same way. A window whose reset has passed since the reading is dropped from the ranking: it describes a window that no longer exists |
+| Back off | A 429 puts that ONE account on a per-account backoff (one refresh cycle, doubling, capped at 10 minutes; a real `Retry-After` is honoured up to an hour). The manual refresh button ignores the backoff. Alerts never fire on a failed read — a read failure is a change in our view, not in the account |
 
 Accounts are fetched concurrently, so one slow or broken account never holds up the board.
 
 ### What it never does
 
 - Write to the Keychain, or touch the CLI's auth state.
-- Spend tokens. The usage endpoint is free; this app never sends a message to measure
-  a limit.
+- Spend tokens. The usage endpoint is free and read-only — it reports the limits, it
+  does not count against them — and this app never sends a message to measure one.
+  Five accounts at the default 2-minute interval is 2.5 requests a minute in total.
 - Send your data anywhere. The only network call is to `api.anthropic.com`.
 
 ## Prior art

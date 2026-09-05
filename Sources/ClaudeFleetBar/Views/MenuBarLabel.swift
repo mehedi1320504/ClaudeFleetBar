@@ -14,6 +14,13 @@ struct MenuBarLabel: View {
             }
         } else if usages.isEmpty {
             Image(systemName: "circle.dashed")
+        } else if usages.allSatisfy({ $0.failure != nil }) {
+            // Every read failed. "spent" here would be a claim about the
+            // accounts; this is a claim about our view of them.
+            HStack(spacing: 3) {
+                Image(systemName: "exclamationmark.triangle")
+                Text("no read").font(.system(size: 11, weight: .semibold))
+            }
         } else {
             HStack(spacing: 3) {
                 Image(systemName: "exclamationmark.circle.fill")

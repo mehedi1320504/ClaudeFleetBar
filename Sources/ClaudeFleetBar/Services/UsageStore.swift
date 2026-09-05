@@ -29,6 +29,17 @@ final class UsageStore {
     private var activity: NSObjectProtocol?
     private var didStart = false
 
+    /// The last reading the API actually returned, per account. When a
+    /// refresh fails this is what the row keeps showing — labelled with its
+    /// age — instead of blanking an account that read 86% headroom two
+    /// minutes ago and sinking it to the bottom of the run order.
+    private var lastLive: [Account.ID: (usage: AccountUsage, at: Date)] = [:]
+
+    /// Per-account throttle state: consecutive 429s and when to ask again.
+    /// The usage endpoint limits reads per account, so one throttled account
+    /// backs off alone while the others keep refreshing on schedule.
+    private var throttle: [Account.ID: (failures: Int, until: Date)] = [:]
+
     init(notifier: Notifier = Notifier()) {
         self.notifier = notifier
         let stored = UserDefaults.standard.double(forKey: Self.intervalKey)
@@ -82,26 +93,70 @@ final class UsageStore {
         await refresh()
     }
 
-    /// Refreshes every account in parallel. One slow or broken account
+    /// The scheduled refresh: every account not currently in backoff.
+    func refresh() async { await refresh(force: false) }
+
+    /// What one account's fetch came back as.
+    private enum Fetch: Sendable {
+        case live(AccountUsage)
+        case throttled(retryAfter: TimeInterval?)
+        case failed(UsageFailure)
+    }
+
+    /// Refreshes the due accounts in parallel. One slow or broken account
     /// never holds up the rest of the board.
-    func refresh() async {
+    ///
+    /// `force` ignores per-account backoff — it is the manual refresh button,
+    /// where the operator has decided one more request is worth it.
+    func refresh(force: Bool) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         let accounts = AccountDiscovery.discover()
         let api = self.api
+        let now = Date()
+        let due = accounts.filter { account in
+            force || (throttle[account.id].map { $0.until <= now } ?? true)
+        }
 
-        let resolved = await withTaskGroup(of: AccountUsage.self) { group in
-            for account in accounts {
-                group.addTask { await Self.resolve(account, api: api) }
+        let fetched = await withTaskGroup(of: (Account.ID, Fetch).self) { group in
+            for (index, account) in due.enumerated() {
+                group.addTask {
+                    // Stagger, so five identical requests do not land at the
+                    // edge in the same instant.
+                    try? await Task.sleep(for: .milliseconds(200 * index))
+                    return (account.id, await Self.resolve(account, api: api))
+                }
             }
-            var out: [AccountUsage] = []
-            for await result in group { out.append(result) }
+            var out: [Account.ID: Fetch] = [:]
+            for await (id, fetch) in group { out[id] = fetch }
             return out
         }
 
-        let ordered = resolved.sorted { $0.account.label < $1.account.label }
+        var rows: [AccountUsage] = []
+        for account in accounts {
+            switch fetched[account.id] {
+            case .live(let usage)?:
+                lastLive[account.id] = (usage, now)
+                throttle[account.id] = nil
+                rows.append(usage)
+            case .throttled(let retryAfter)?:
+                let failures = (throttle[account.id]?.failures ?? 0) + 1
+                let wait = Backoff.delay(failures: failures, interval: refreshInterval, retryAfter: retryAfter)
+                let until = now.addingTimeInterval(wait)
+                throttle[account.id] = (failures, until)
+                rows.append(degraded(account, failure: .rateLimited(retryAt: until)))
+            case .failed(let failure)?:
+                // A plain network or credential failure retries on the next tick.
+                rows.append(degraded(account, failure: failure))
+            case nil:
+                // Still inside this account's backoff; nothing was asked.
+                rows.append(degraded(account, failure: .rateLimited(retryAt: throttle[account.id]?.until)))
+            }
+        }
+
+        let ordered = rows.sorted { $0.account.label < $1.account.label }
         let previous = usages
         usages = ordered
         lastRefresh = .now
@@ -109,40 +164,58 @@ final class UsageStore {
         notifier.reportTransitions(from: previous, to: ordered)
     }
 
-    /// Live API first; the CLI's own cache only as a labelled fallback.
-    private nonisolated static func resolve(_ account: Account, api: UsageAPI) async -> AccountUsage {
+    /// Live API only. Fallbacks are decided on the main actor, where the
+    /// last-live table lives.
+    private nonisolated static func resolve(_ account: Account, api: UsageAPI) async -> Fetch {
         let credentials: KeychainCredentials.Credentials
         do {
             credentials = try KeychainCredentials.load(for: account)
         } catch KeychainCredentials.Failure.notFound {
-            return fallback(account, failure: .noCredentials)
+            return .failed(.noCredentials)
         } catch {
-            return fallback(account, failure: .credentialsUnreadable)
+            return .failed(.credentialsUnreadable)
         }
 
-        guard !credentials.isExpired else {
-            return fallback(account, failure: .credentialsExpired)
-        }
+        guard !credentials.isExpired else { return .failed(.credentialsExpired) }
 
         do {
             let response = try await api.fetch(token: credentials.accessToken)
-            return AccountUsage(
+            return .live(AccountUsage(
                 account: account,
                 fiveHour: response.fiveHour,
                 sevenDay: response.sevenDay,
                 origin: .live,
                 failure: nil,
                 plan: credentials.subscriptionType
-            )
+            ))
+        } catch UsageAPI.Failure.rateLimited(let retryAfter) {
+            return .throttled(retryAfter: retryAfter)
         } catch {
-            return fallback(account, failure: .network(Self.describe(error)))
+            return .failed(.network(Self.describe(error)))
         }
     }
 
-    /// A failed live read still shows numbers when the CLI cached some —
-    /// clearly marked as cached, with its age, so it is never mistaken
+    /// What a row shows when the live read failed: this app's own last live
+    /// reading if it has one, then the CLI's file cache, then nothing — each
+    /// labelled with its origin and age, so a stale number is never mistaken
     /// for the current truth.
-    private nonisolated static func fallback(_ account: Account, failure: UsageFailure) -> AccountUsage {
+    private func degraded(_ account: Account, failure: UsageFailure) -> AccountUsage {
+        if let last = lastLive[account.id] {
+            return AccountUsage(
+                account: account,
+                fiveHour: last.usage.fiveHour,
+                sevenDay: last.usage.sevenDay,
+                origin: .stale(fetchedAt: last.at),
+                failure: failure,
+                plan: last.usage.plan
+            )
+        }
+        return Self.fromCliCache(account, failure: failure)
+    }
+
+    /// The CLI's own `cachedUsageUtilization`, written the last time that
+    /// account ran a session. Days old is normal; the badge says so.
+    private nonisolated static func fromCliCache(_ account: Account, failure: UsageFailure) -> AccountUsage {
         guard let cached = ConfigFile.cachedUsage(configDir: account.configDir) else {
             return .failed(account, failure)
         }

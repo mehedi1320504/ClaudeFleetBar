@@ -17,7 +17,7 @@ struct AccountDetail: View {
                     .frame(minWidth: 44, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(Int((Ranking.headroom(usage) ?? 0).rounded()))% headroom")
+                    Text(headroomLabel)
                         .font(.numeric(14, .semibold))
                     if let email = usage.account.email {
                         Text(email)
@@ -36,12 +36,28 @@ struct AccountDetail: View {
             }
 
             if let failure = usage.failure {
-                Text(failure.remedy)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.tint(forUsed: 92))
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(failure.remedy)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.tint(forUsed: 92))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let retryAt = failure.retryAt {
+                        Text(retryAt > now
+                             ? "Retrying in \(Format.countdown(to: retryAt, now: now))"
+                             : "Retrying on the next refresh")
+                            .font(.numeric(10, .medium))
+                            .foregroundStyle(Palette.subtle)
+                    }
+                }
             }
         }
+    }
+
+    /// "0% headroom" was what a failed read used to say — a lie with a
+    /// number in it. No reading is no reading.
+    private var headroomLabel: String {
+        guard let headroom = Ranking.headroom(usage, now: now) else { return "no reading" }
+        return "\(Int(headroom.rounded()))% headroom"
     }
 }
 
@@ -88,13 +104,13 @@ struct WindowGauge: View {
     var body: some View {
         HStack(spacing: 9) {
             UsageRing(used: window?.utilization ?? 0, size: 44, lineWidth: 5)
-                .opacity(window == nil ? 0.35 : 1)
+                .opacity(window == nil || window?.hasRolledOver(now: now) == true ? 0.35 : 1)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Palette.subtle)
                 if let resets = window?.resetsAt {
-                    Text(Format.countdown(to: resets, now: now))
+                    Text(Format.resetCountdown(to: resets, now: now))
                         .font(.numeric(12, .semibold))
                     Text(Format.clock(resets))
                         .font(.system(size: 9))
@@ -120,7 +136,16 @@ struct AccountRow: View {
 
     @State private var isHovering = false
 
-    private var used: Double { 100 - (Ranking.headroom(usage) ?? 100) }
+    private var headroom: Double? { Ranking.headroom(usage, now: now) }
+    private var used: Double { 100 - (headroom ?? 100) }
+
+    /// The collapsed row used to render a 16-hour-old cached figure exactly
+    /// like a live one; the badge that said otherwise only appeared once the
+    /// row was expanded. Now the caption under the percentage carries it.
+    private var caption: String {
+        guard let origin = usage.origin, let fetchedAt = origin.fetchedAt else { return "free" }
+        return "\(Format.countdown(to: now, now: fetchedAt)) old"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -189,16 +214,22 @@ struct AccountRow: View {
     private var trailing: some View {
         HStack(spacing: 6) {
             VStack(alignment: .trailing, spacing: 2) {
-                if usage.hasNumbers {
-                    Text("\(Int((100 - used).rounded()))%")
+                if let headroom {
+                    Text("\(Int(headroom.rounded()))%")
                         .font(.numeric(13, .bold))
                         .foregroundStyle(Palette.tint(forUsed: used))
-                    Text("free").font(.system(size: 9)).foregroundStyle(Palette.subtle)
+                    Text(caption)
+                        .font(.system(size: 9))
+                        .foregroundStyle(usage.origin?.isLive == true ? Palette.subtle : Palette.tint(forUsed: 92))
                 } else if let failure = usage.failure {
                     Text(failure.summary)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.tint(forUsed: 100))
                         .multilineTextAlignment(.trailing)
+                } else {
+                    Text("no reading")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.subtle)
                 }
             }
             .frame(width: 62, alignment: .trailing)
@@ -221,7 +252,7 @@ struct AccountRow: View {
                 .frame(width: 15, alignment: .leading)
             UsageBar(used: window?.utilization ?? 0)
                 .opacity(window == nil ? 0.3 : 1)
-            Text(window?.resetsAt.map { Format.countdown(to: $0, now: now) } ?? "—")
+            Text(window?.resetsAt.map { Format.resetCountdown(to: $0, now: now) } ?? "—")
                 .font(.numeric(9, .medium))
                 .foregroundStyle(Palette.subtle)
                 .frame(width: 42, alignment: .trailing)
@@ -232,6 +263,11 @@ struct AccountRow: View {
         var lines = [usage.account.email ?? usage.account.configDir]
         if let f = usage.fiveHour { lines.append("5-hour: \(Format.percent(f.utilization)) used") }
         if let s = usage.sevenDay { lines.append("Weekly: \(Format.percent(s.utilization)) used") }
+        switch usage.origin {
+        case .stale(let at): lines.append("Last live reading \(Format.countdown(to: now, now: at)) ago")
+        case .cache(let at): lines.append("From the CLI's cache, \(Format.countdown(to: now, now: at)) old")
+        case .live, nil: break
+        }
         if let failure = usage.failure { lines.append(failure.remedy) }
         lines.append(isExpanded ? "Click to collapse" : "Click for detail")
         return lines.joined(separator: "\n")
@@ -280,8 +316,13 @@ struct OriginBadge: View {
             Label("live", systemImage: "dot.radiowaves.left.and.right")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Palette.subtle)
+        case .stale(let fetchedAt):
+            Label("last live read \(Format.countdown(to: now, now: fetchedAt)) ago",
+                  systemImage: "clock.arrow.circlepath")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Palette.tint(forUsed: 92))
         case .cache(let fetchedAt):
-            Label("cached \(Format.countdown(to: now, now: fetchedAt)) old",
+            Label("CLI cache, \(Format.countdown(to: now, now: fetchedAt)) old",
                   systemImage: "clock.badge.exclamationmark")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Palette.tint(forUsed: 92))

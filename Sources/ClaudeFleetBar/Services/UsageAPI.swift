@@ -11,6 +11,10 @@ struct UsageAPI: Sendable {
 
     enum Failure: Error {
         case http(Int)
+        /// 429. The endpoint is rate-limited per account, and it says so
+        /// from the edge with `Retry-After: 0` — so the header is passed up
+        /// only when it actually carries a number.
+        case rateLimited(retryAfter: TimeInterval?)
         case malformed
     }
 
@@ -27,6 +31,10 @@ struct UsageAPI: Sendable {
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if http.statusCode == 429 {
+                let seconds = http.value(forHTTPHeaderField: "Retry-After").flatMap { TimeInterval($0) }
+                throw Failure.rateLimited(retryAfter: (seconds ?? 0) > 0 ? seconds : nil)
+            }
             throw Failure.http(http.statusCode)
         }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
