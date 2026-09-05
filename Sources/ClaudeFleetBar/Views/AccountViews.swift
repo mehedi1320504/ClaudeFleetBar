@@ -124,10 +124,17 @@ struct AccountRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: onToggle) { collapsedRow }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .onHover { isHovering = $0 }
+            // contentShape must be applied to the LABEL, not to the Button.
+            // Outside it, the button's hit area is still just its drawn glyphs,
+            // so every Spacer and inter-element gap stays dead and only the
+            // chevron responds.
+            Button(action: onToggle) {
+                collapsedRow
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {

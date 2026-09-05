@@ -9,6 +9,11 @@ final class UsageStore {
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
 
+    /// False until the first pass finishes. Without it an in-flight first load
+    /// is indistinguishable from "there are no accounts", and the empty state
+    /// tells you to go sign in while it is busy reading the accounts you have.
+    var hasLoaded: Bool { lastRefresh != nil }
+
     /// Seconds between automatic refreshes.
     var refreshInterval: TimeInterval {
         didSet {
@@ -22,6 +27,7 @@ final class UsageStore {
     private let notifier: Notifier
     private var timerTask: Task<Void, Never>?
     private var activity: NSObjectProtocol?
+    private var didStart = false
 
     init(notifier: Notifier = Notifier()) {
         self.notifier = notifier
@@ -29,7 +35,13 @@ final class UsageStore {
         self.refreshInterval = stored > 0 ? stored : 120
     }
 
+    /// Idempotent: `.task` on the menu bar label can run more than once, and
+    /// each call used to restart the timer from zero. A label that re-appeared
+    /// often enough would push the next fire forever into the future and the
+    /// board would silently stop updating.
     func start() {
+        guard !didStart else { return }
+        didStart = true
         holdOffAppNap()
         restartTimer()
         Task { await refresh() }

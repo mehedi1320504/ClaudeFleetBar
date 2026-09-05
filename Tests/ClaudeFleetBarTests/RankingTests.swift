@@ -144,3 +144,19 @@ struct AccountActionsTests {
         #expect(AccountActions.launchCommand(for: account).contains("\"/opt/my claude\""))
     }
 }
+
+@Suite("Elapsed labels")
+struct SinceTests {
+    /// A plain countdown yields "now", which renders as "updated now ago".
+    @Test("the instant after a refresh reads as just now")
+    func justNow() {
+        let t = Date(timeIntervalSince1970: 1000)
+        #expect(Format.since(t, now: t) == "updated just now")
+    }
+
+    @Test("an older refresh reads as an elapsed duration")
+    func elapsed() {
+        let t = Date(timeIntervalSince1970: 1000)
+        #expect(Format.since(t, now: t.addingTimeInterval(180)) == "updated 3m ago")
+    }
+}

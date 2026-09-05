@@ -22,6 +22,13 @@ enum Format {
         return f.string(from: date)
     }
 
+    /// "updated just now" rather than "updated now ago", which is what a plain
+    /// countdown produces in the second after a refresh lands.
+    static func since(_ date: Date, now: Date = .now) -> String {
+        let elapsed = countdown(to: now, now: date)
+        return elapsed == "now" ? "updated just now" : "updated \(elapsed) ago"
+    }
+
     static func percent(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
     }

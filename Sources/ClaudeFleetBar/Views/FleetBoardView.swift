@@ -11,13 +11,14 @@ struct FleetBoardView: View {
     @State private var copyResetTask: Task<Void, Never>?
     @State private var expandedID: String?
 
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            if store.usages.isEmpty {
+            if store.usages.isEmpty && !store.hasLoaded {
+                loadingState
+            } else if store.usages.isEmpty {
                 emptyState
             } else {
                 if let best = Ranking.recommended(store.usages) {
@@ -36,7 +37,7 @@ struct FleetBoardView: View {
         .padding(14)
         .frame(width: 380)
         .background(.ultraThinMaterial)
-        .onReceive(tick) { now = $0 }
+        .task { await runClock() }
         .onAppear { Task { await store.refreshIfStale(olderThan: 20) } }
     }
 
@@ -48,7 +49,7 @@ struct FleetBoardView: View {
             if store.isRefreshing {
                 ProgressView().controlSize(.small).scaleEffect(0.7)
             } else if let last = store.lastRefresh {
-                Text("updated \(Format.countdown(to: now, now: last)) ago")
+                Text(Format.since(last, now: now))
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.subtle)
             }
@@ -86,6 +87,35 @@ struct FleetBoardView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Drives the countdowns.
+    ///
+    /// A `Timer.publish` here kept firing while the panel was closed — profiling
+    /// an idle app showed `TimerPublisher.fire` invalidating AttributeGraph and
+    /// relaying out the whole window once a second, for a board nobody was
+    /// looking at. `.task` is cancelled when the view goes away, so the clock
+    /// cannot outlive what it is animating.
+    ///
+    /// The cadence follows the content: every countdown reads in whole minutes
+    /// except under a minute, so a second-by-second tick is only worth paying
+    /// for when something is actually counting seconds.
+    private func runClock() async {
+        while !Task.isCancelled {
+            now = Date()
+            try? await Task.sleep(for: .seconds(needsSecondTicks ? 1 : 10))
+        }
+    }
+
+    /// True when any visible countdown is inside its final minute.
+    private var needsSecondTicks: Bool {
+        if let last = store.lastRefresh, now.timeIntervalSince(last) < 60 { return true }
+        return store.usages.contains { usage in
+            [usage.fiveHour, usage.sevenDay].contains { window in
+                guard let seconds = window?.secondsUntilReset(now: now) else { return false }
+                return seconds < 60
             }
         }
     }
@@ -136,6 +166,20 @@ struct FleetBoardView: View {
             .compactMap { Ranking.bindingWindow($0)?.window.resetsAt }
             .filter { $0 > now }
             .min()
+    }
+
+    private var loadingState: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small).scaleEffect(0.8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Reading accounts\u{2026}").font(.system(size: 12, weight: .medium))
+                Text("Checking each config dir's usage.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.subtle)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 14)
     }
 
     private var emptyState: some View {
