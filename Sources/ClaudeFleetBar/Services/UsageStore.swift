@@ -21,6 +21,7 @@ final class UsageStore {
     private let api = UsageAPI()
     private let notifier: Notifier
     private var timerTask: Task<Void, Never>?
+    private var activity: NSObjectProtocol?
 
     init(notifier: Notifier = Notifier()) {
         self.notifier = notifier
@@ -29,8 +30,24 @@ final class UsageStore {
     }
 
     func start() {
+        holdOffAppNap()
         restartTimer()
         Task { await refresh() }
+    }
+
+    /// A menu bar app with no windows is exactly what App Nap targets: macOS
+    /// throttles its timers, so the first refresh lands and every scheduled one
+    /// after it is deferred indefinitely. The board then sits there looking
+    /// current while going quietly stale — the failure this app exists to avoid.
+    ///
+    /// `userInitiatedAllowingIdleSystemSleep` opts out of the throttling while
+    /// still letting the Mac sleep normally.
+    private func holdOffAppNap() {
+        guard activity == nil else { return }
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Polling Claude account usage"
+        )
     }
 
     private func restartTimer() {
@@ -43,6 +60,14 @@ final class UsageStore {
                 await self?.refresh()
             }
         }
+    }
+
+    /// Refreshes only when the current numbers are older than `age`.
+    /// Opening the panel should show something current without hammering the
+    /// API each time it is opened and closed.
+    func refreshIfStale(olderThan age: TimeInterval) async {
+        if let lastRefresh, Date().timeIntervalSince(lastRefresh) < age { return }
+        await refresh()
     }
 
     /// Refreshes every account in parallel. One slow or broken account

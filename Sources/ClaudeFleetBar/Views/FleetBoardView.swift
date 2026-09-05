@@ -33,6 +33,7 @@ struct FleetBoardView: View {
         .frame(width: 380)
         .background(.ultraThinMaterial)
         .onReceive(tick) { now = $0 }
+        .onAppear { Task { await store.refreshIfStale(olderThan: 20) } }
     }
 
     private var header: some View {
