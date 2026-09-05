@@ -1,44 +1,16 @@
 import SwiftUI
 
-/// The headline card: the account to reach for right now.
-struct RecommendedCard: View {
+/// The detail treatment: who the account is, how much room it has, and both
+/// windows as rings with their countdown and wall-clock reset.
+///
+/// Shared by the recommended card and by an expanded row, so the two cannot
+/// drift apart — clicking a row shows exactly what the top card shows.
+struct AccountDetail: View {
     let usage: AccountUsage
     let now: Date
-    let isCopied: Bool
-    let onCopy: () -> Void
-
-    @State private var isHovering = false
 
     var body: some View {
-        Button(action: onCopy) { cardBody }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
-            .accountContextMenu(usage.account)
-            .help("Click to copy: \(AccountActions.launchCommand(for: usage.account))")
-    }
-
-    private var cardBody: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Text("RUN NEXT")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .tracking(0.9)
-                    .foregroundStyle(Palette.tint(forUsed: 100 - (Ranking.headroom(usage) ?? 0)))
-                Spacer()
-                if isCopied {
-                    Label("Copied", systemImage: "checkmark")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Palette.tint(forUsed: 0))
-                } else if isHovering {
-                    Label("click to copy command", systemImage: "doc.on.doc")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Palette.subtle)
-                } else {
-                    OriginBadge(usage: usage, now: now)
-                }
-            }
-
             HStack(alignment: .center, spacing: 14) {
                 Text(usage.account.label.uppercased())
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
@@ -62,42 +34,48 @@ struct RecommendedCard: View {
                 Divider().frame(height: 44)
                 WindowGauge(title: "Weekly", window: usage.sevenDay, now: now)
             }
+
+            if let failure = usage.failure {
+                Text(failure.remedy)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tint(forUsed: 92))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The headline card: the account to reach for right now.
+struct RecommendedCard: View {
+    let usage: AccountUsage
+    let now: Date
+    let isCopied: Bool
+    let onCopy: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Text("RUN NEXT")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(0.9)
+                    .foregroundStyle(Palette.tint(forUsed: 100 - (Ranking.headroom(usage) ?? 0)))
+                Spacer()
+                OriginBadge(usage: usage, now: now)
+            }
+
+            AccountDetail(usage: usage, now: now)
+
+            CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Palette.cardFill.opacity(isHovering ? 2.2 : 1))
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isHovering ? Palette.hairline.opacity(2.5) : Palette.hairline, lineWidth: 1)
+                .stroke(Palette.hairline, lineWidth: 1)
         )
-    }
-}
-
-/// Right-click actions shared by the card and the rows.
-private struct AccountContextMenu: ViewModifier {
-    let account: Account
-
-    func body(content: Content) -> some View {
-        content.contextMenu {
-            Button("Copy launch command") {
-                AccountActions.copy(AccountActions.launchCommand(for: account))
-            }
-            Button("Copy config dir path") {
-                AccountActions.copy(account.configDir)
-            }
-            Divider()
-            Button("Reveal config dir in Finder") {
-                AccountActions.revealConfigDir(account)
-            }
-        }
-    }
-}
-
-extension View {
-    func accountContextMenu(_ account: Account) -> some View {
-        modifier(AccountContextMenu(account: account))
+        .accountContextMenu(usage.account)
     }
 }
 
@@ -129,15 +107,15 @@ struct WindowGauge: View {
     }
 }
 
-/// A compact row for every account below the recommendation.
-///
-/// Clicking copies the command that runs Claude Code under this account, which
-/// is the thing you actually want once the board has told you which to pick.
+/// A row in the ranked list. Collapsed it is a compact meter; clicking it
+/// expands into the same detail the top card shows.
 struct AccountRow: View {
     let usage: AccountUsage
     let rank: Int
     let now: Date
+    let isExpanded: Bool
     let isCopied: Bool
+    let onToggle: () -> Void
     let onCopy: () -> Void
 
     @State private var isHovering = false
@@ -145,19 +123,33 @@ struct AccountRow: View {
     private var used: Double { 100 - (Ranking.headroom(usage) ?? 100) }
 
     var body: some View {
-        Button(action: onCopy) { rowBody }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.primary.opacity(isHovering ? 0.06 : 0))
-            )
-            .accountContextMenu(usage.account)
-            .help(tooltip)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onToggle) { collapsedRow }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onHover { isHovering = $0 }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    AccountDetail(usage: usage, now: now)
+                    CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+                }
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+                .padding(.leading, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(isExpanded ? 0.05 : (isHovering ? 0.06 : 0)))
+        )
+        .accountContextMenu(usage.account)
+        .help(tooltip)
     }
 
-    private var rowBody: some View {
+    private var collapsedRow: some View {
         HStack(spacing: 10) {
             Text("\(rank)")
                 .font(.numeric(10, .medium))
@@ -168,26 +160,33 @@ struct AccountRow: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .frame(width: 26, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 4) {
-                meter(label: "5h", window: usage.fiveHour)
-                meter(label: "7d", window: usage.sevenDay)
+            // The meters would only repeat what the detail says, so they give
+            // way to it rather than stacking two readings of the same number.
+            if !isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    meter(label: "5h", window: usage.fiveHour)
+                    meter(label: "7d", window: usage.sevenDay)
+                }
+            } else {
+                OriginBadge(usage: usage, now: now)
             }
 
             Spacer(minLength: 6)
 
+            trailing
+        }
+        .padding(.vertical, 7)
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        HStack(spacing: 6) {
             VStack(alignment: .trailing, spacing: 2) {
-                if isCopied {
-                    Label("Copied", systemImage: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Palette.tint(forUsed: 0))
-                        .transition(.opacity)
-                } else if usage.hasNumbers {
+                if usage.hasNumbers {
                     Text("\(Int((100 - used).rounded()))%")
                         .font(.numeric(13, .bold))
                         .foregroundStyle(Palette.tint(forUsed: used))
-                    Text(isHovering ? "copy" : "free")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Palette.subtle)
+                    Text("free").font(.system(size: 9)).foregroundStyle(Palette.subtle)
                 } else if let failure = usage.failure {
                     Text(failure.summary)
                         .font(.system(size: 10, weight: .medium))
@@ -195,10 +194,15 @@ struct AccountRow: View {
                         .multilineTextAlignment(.trailing)
                 }
             }
-            .frame(width: 78, alignment: .trailing)
+            .frame(width: 62, alignment: .trailing)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Palette.subtle)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .opacity(isHovering || isExpanded ? 1 : 0.35)
+                .frame(width: 10)
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 4)
     }
 
     @ViewBuilder
@@ -222,8 +226,39 @@ struct AccountRow: View {
         if let f = usage.fiveHour { lines.append("5-hour: \(Format.percent(f.utilization)) used") }
         if let s = usage.sevenDay { lines.append("Weekly: \(Format.percent(s.utilization)) used") }
         if let failure = usage.failure { lines.append(failure.remedy) }
-        lines.append("Click to copy: \(AccountActions.launchCommand(for: usage.account))")
+        lines.append(isExpanded ? "Click to collapse" : "Click for detail")
         return lines.joined(separator: "\n")
+    }
+}
+
+/// Copies the command that runs Claude Code under this account.
+struct CopyCommandButton: View {
+    let account: Account
+    let isCopied: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(isCopied ? "Copied" : "Copy launch command")
+                    .font(.system(size: 10, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isCopied ? Palette.tint(forUsed: 0) : Palette.subtle)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(isHovering ? 0.09 : 0.05))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(AccountActions.launchCommand(for: account))
     }
 }
 
@@ -246,5 +281,31 @@ struct OriginBadge: View {
         case nil:
             EmptyView()
         }
+    }
+}
+
+/// Right-click actions shared by the card and the rows.
+private struct AccountContextMenu: ViewModifier {
+    let account: Account
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button("Copy launch command") {
+                AccountActions.copy(AccountActions.launchCommand(for: account))
+            }
+            Button("Copy config dir path") {
+                AccountActions.copy(account.configDir)
+            }
+            Divider()
+            Button("Reveal config dir in Finder") {
+                AccountActions.revealConfigDir(account)
+            }
+        }
+    }
+}
+
+extension View {
+    func accountContextMenu(_ account: Account) -> some View {
+        modifier(AccountContextMenu(account: account))
     }
 }

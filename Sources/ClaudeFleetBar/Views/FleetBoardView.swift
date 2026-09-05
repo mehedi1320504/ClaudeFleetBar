@@ -9,6 +9,7 @@ struct FleetBoardView: View {
     @State private var showSettings = false
     @State private var copiedID: String?
     @State private var copyResetTask: Task<Void, Never>?
+    @State private var expandedID: String?
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -71,14 +72,29 @@ struct FleetBoardView: View {
 
                 VStack(spacing: 0) {
                     ForEach(Array(others.enumerated()), id: \.element.id) { index, usage in
-                        AccountRow(usage: usage, rank: index + 2, now: now,
-                                   isCopied: copiedID == usage.id) { copy(usage) }
+                        AccountRow(
+                            usage: usage,
+                            rank: index + 2,
+                            now: now,
+                            isExpanded: expandedID == usage.id,
+                            isCopied: copiedID == usage.id,
+                            onToggle: { toggle(usage) },
+                            onCopy: { copy(usage) }
+                        )
                         if index < others.count - 1 {
                             Divider().overlay(Palette.hairline)
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// One row open at a time, so the panel cannot grow past the screen and
+    /// the comparison stays between the open row and the card above it.
+    private func toggle(_ usage: AccountUsage) {
+        withAnimation(.smooth(duration: 0.22)) {
+            expandedID = expandedID == usage.id ? nil : usage.id
         }
     }
 
