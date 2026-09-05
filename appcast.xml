@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Claude Fleet Bar</title>
+    <link>https://github.com/mehedi1320504/ClaudeFleetBar</link>
+    <description>Updates for Claude Fleet Bar</description>
+    <language>en</language>
+    <item>
+      <title>1.0.1</title>
+      <pubDate>Sat, 05 Sep 2026 10:35:16 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <link>https://github.com/mehedi1320504/ClaudeFleetBar/releases/tag/v1.0.1</link>
+      <description>See https://github.com/mehedi1320504/ClaudeFleetBar/releases/tag/v1.0.1</description>
+      <enclosure url="https://github.com/mehedi1320504/ClaudeFleetBar/releases/download/v1.0.1/ClaudeFleetBar.zip" length="1387426" type="application/octet-stream" sparkle:edSignature="N0IfY6KA3aX+qTIxmwBFz/qLzxRJIjSpE2DkgjH8IRl4sQTwD9KKqMZmFpF4oIaPgVUkfH8wvlE4aVc2wDI9Dg==" />
+    </item>
+  </channel>
+</rss>
