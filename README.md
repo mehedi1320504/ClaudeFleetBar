@@ -34,7 +34,7 @@ countdown to each reset.
 Requires macOS 14+ and the Xcode toolchain.
 
 ```sh
-git clone https://github.com/<you>/ClaudeFleetBar.git
+git clone https://github.com/mehedi1320504/ClaudeFleetBar.git
 cd ClaudeFleetBar
 ./scripts/build-app.sh
 open dist/ClaudeFleetBar.app
