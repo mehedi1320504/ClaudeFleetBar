@@ -4,6 +4,7 @@ import SwiftUI
 struct FleetBoardView: View {
     @Bindable var store: UsageStore
     let notifier: Notifier
+    let updates: UpdateController
 
     @State private var now = Date()
     @State private var showSettings = false
@@ -15,6 +16,10 @@ struct FleetBoardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+
+            if let version = updates.availableVersion {
+                updateBanner(version)
+            }
 
             if store.usages.isEmpty && !store.hasLoaded {
                 loadingState
@@ -59,6 +64,31 @@ struct FleetBoardView: View {
             .buttonStyle(.plain)
             .help("Refresh now")
         }
+    }
+
+    /// Surfaces an update without taking over the panel. Clicking hands off to
+    /// Sparkle's own dialog, which is where the install is confirmed.
+    private func updateBanner(_ version: String) -> some View {
+        Button { updates.checkForUpdates() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.tint(forUsed: 0))
+                Text("Version \(version) is available")
+                    .font(.system(size: 11, weight: .medium))
+                Spacer()
+                Text("Update\u{2026}")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.tint(forUsed: 0))
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Palette.tint(forUsed: 0).opacity(0.12))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -201,7 +231,7 @@ struct FleetBoardView: View {
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showSettings, arrowEdge: .bottom) {
-                SettingsView(store: store, notifier: notifier)
+                SettingsView(store: store, notifier: notifier, updates: updates)
             }
 
             Spacer()
@@ -218,12 +248,16 @@ struct FleetBoardView: View {
 struct SettingsView: View {
     @Bindable var store: UsageStore
     let notifier: Notifier
+    let updates: UpdateController
     @State private var alertsOn: Bool
+    @State private var autoUpdate: Bool
 
-    init(store: UsageStore, notifier: Notifier) {
+    init(store: UsageStore, notifier: Notifier, updates: UpdateController) {
         self.store = store
         self.notifier = notifier
+        self.updates = updates
         _alertsOn = State(initialValue: notifier.isEnabled)
+        _autoUpdate = State(initialValue: updates.automaticallyChecks)
     }
 
     private let intervals: [(String, TimeInterval)] = [
@@ -251,6 +285,25 @@ struct SettingsView: View {
                     notifier.isEnabled = on
                     if on { notifier.requestAuthorization() }
                 }
+
+            Divider().overlay(Palette.hairline)
+
+            Toggle("Check for updates automatically", isOn: $autoUpdate)
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: autoUpdate) { _, on in updates.automaticallyChecks = on }
+
+            HStack(spacing: 8) {
+                Text("Version \(updates.currentVersion)")
+                    .font(.numeric(10, .medium))
+                    .foregroundStyle(Palette.subtle)
+                Spacer()
+                Button("Check now") { updates.checkForUpdates() }
+                    .font(.system(size: 11))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.tint(forUsed: 0))
+            }
 
             Text("Board is exported to ~/.cache/claude-fleet-bar/usage.json for scripting.")
                 .font(.system(size: 9))

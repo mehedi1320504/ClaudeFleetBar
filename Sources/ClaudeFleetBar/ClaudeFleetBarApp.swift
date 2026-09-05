@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct ClaudeFleetBarApp: App {
     @State private var store: UsageStore
+    @State private var updates = UpdateController()
     private let notifier: Notifier
 
     init() {
@@ -13,7 +14,7 @@ struct ClaudeFleetBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            FleetBoardView(store: store, notifier: notifier)
+            FleetBoardView(store: store, notifier: notifier, updates: updates)
         } label: {
             MenuBarLabel(usages: store.usages)
                 .task {

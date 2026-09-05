@@ -22,5 +22,13 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/mehedi1320504/ClaudeFleetBar/master/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>AInyhBQ5OImtGPG2DJakiFidFyp+qMCkzwJxZcdXcrc=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

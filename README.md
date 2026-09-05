@@ -36,6 +36,10 @@ countdown to each reset.
   written, refreshed or deleted. An expired token is reported, not repaired.
 - **JSON export** to `~/.cache/claude-fleet-bar/usage.json` so scripts can rank
   accounts by measured headroom instead of probing blind.
+- **Updates itself** via [Sparkle](https://sparkle-project.org), from this repo's
+  GitHub Releases. It asks before installing — an update never restarts the app
+  mid-task. Each release is EdDSA-signed, and the public key is compiled into the
+  app, so a tampered download is refused even if the release host is not.
 
 ## Install
 
@@ -71,6 +75,24 @@ macOS will ask for Keychain access once per account. Choose **Always Allow**.
 
 To start it at login: System Settings → General → Login Items → add
 `dist/ClaudeFleetBar.app`.
+
+## Releasing
+
+```sh
+export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)"
+export APPLE_ID="you@example.com" APPLE_TEAM_ID="TEAMID"
+export APPLE_APP_PASSWORD="app-specific-password"
+./scripts/release.sh 1.0.1
+```
+
+That builds, notarizes, staples, EdDSA-signs the artifact for Sparkle, updates
+`appcast.xml`, tags, publishes the GitHub release, and then checks the download
+URL actually resolves — an appcast advertising a missing asset is worse than no
+appcast at all.
+
+The Sparkle signing key lives in your login Keychain (put there by
+`generate_keys`), never in a file and never in the environment. Losing it means
+existing installs can no longer verify updates, so back up the Keychain item.
 
 ## CLI
 
