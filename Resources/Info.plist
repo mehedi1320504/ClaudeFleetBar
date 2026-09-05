@@ -2,26 +2,25 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>ClaudeFleetBar</string>
-    <key>CFBundleDisplayName</key>
-    <string>Claude Fleet Bar</string>
-    <key>CFBundleIdentifier</key>
-    <string>dev.claudefleetbar.app</string>
-    <key>CFBundleExecutable</key>
-    <string>ClaudeFleetBar</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <!-- Menu bar only: no Dock icon, no main window. -->
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>MIT License</string>
+	<key>CFBundleDisplayName</key>
+	<string>Claude Fleet Bar</string>
+	<key>CFBundleExecutable</key>
+	<string>ClaudeFleetBar</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.claudefleetbar.app</string>
+	<key>CFBundleName</key>
+	<string>ClaudeFleetBar</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>MIT License</string>
 </dict>
 </plist>
