@@ -7,6 +7,10 @@ It auto-detects every `~/.claude-account-*` config dir, reads each account's usa
 **live**, and ranks them by real headroom — 5-hour window, weekly window, and the
 countdown to each reset.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="The Fleet panel: account E recommended with 86% headroom, then C, B, D and A ranked below with 5-hour and weekly meters and reset countdowns" width="426">
+</p>
+
 > **Why not just read the CLI's cache?** Claude Code stores its last-known usage in
 > `<config-dir>/.claude.json` under `cachedUsageUtilization`, but it only writes that
 > when the account actually runs a session. On a 5-account fleet, two dirs had numbers
@@ -24,6 +28,10 @@ countdown to each reset.
   one in days.
 - **Transition-only alerts** when an account frees up, is nearly spent, or runs out.
   A notifier that fires every refresh is one you learn to ignore.
+- **Click an account to copy its launch command**
+  (`CLAUDE_CONFIG_DIR="$HOME/.claude-account-e" claude`), so picking one and using
+  it are the same gesture. Right-click for the config dir path or to reveal it in
+  Finder. The app never launches Claude itself.
 - **Read-only, always.** Credentials are read from the login Keychain and never
   written, refreshed or deleted. An expired token is reported, not repaired.
 - **JSON export** to `~/.cache/claude-fleet-bar/usage.json` so scripts can rank

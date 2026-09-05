@@ -113,3 +113,34 @@ struct FormatTests {
         #expect(Format.countdown(to: Date(timeIntervalSince1970: 0), now: now) == "now")
     }
 }
+
+
+@Suite("Launch command")
+@MainActor
+struct AccountActionsTests {
+    /// The command is pasted into a terminal that may be on a shared screen,
+    /// so a home-relative path is used rather than one carrying a username.
+    @Test("a home-relative config dir is written with $HOME")
+    func usesHomeVariable() {
+        let dir = NSHomeDirectory() + "/.claude-account-a"
+        let account = Account(configDir: dir, label: "a", email: nil, displayName: nil)
+        #expect(AccountActions.launchCommand(for: account)
+                == "CLAUDE_CONFIG_DIR=\"$HOME/.claude-account-a\" claude")
+    }
+
+    @Test("a dir outside home keeps its absolute path")
+    func keepsAbsolutePathOutsideHome() {
+        let account = Account(configDir: "/opt/claude-work", label: "work",
+                              email: nil, displayName: nil)
+        #expect(AccountActions.launchCommand(for: account)
+                == "CLAUDE_CONFIG_DIR=\"/opt/claude-work\" claude")
+    }
+
+    /// Quoted, so a path containing a space cannot split into two shell words.
+    @Test("the path is quoted")
+    func quotesThePath() {
+        let account = Account(configDir: "/opt/my claude", label: "x",
+                              email: nil, displayName: nil)
+        #expect(AccountActions.launchCommand(for: account).contains("\"/opt/my claude\""))
+    }
+}

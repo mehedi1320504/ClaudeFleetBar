@@ -7,6 +7,8 @@ struct FleetBoardView: View {
 
     @State private var now = Date()
     @State private var showSettings = false
+    @State private var copiedID: String?
+    @State private var copyResetTask: Task<Void, Never>?
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -18,7 +20,8 @@ struct FleetBoardView: View {
                 emptyState
             } else {
                 if let best = Ranking.recommended(store.usages) {
-                    RecommendedCard(usage: best, now: now)
+                    RecommendedCard(usage: best, now: now,
+                                    isCopied: copiedID == best.id) { copy(best) }
                     rest(excluding: best)
                 } else {
                     allSpent
@@ -68,13 +71,28 @@ struct FleetBoardView: View {
 
                 VStack(spacing: 0) {
                     ForEach(Array(others.enumerated()), id: \.element.id) { index, usage in
-                        AccountRow(usage: usage, rank: index + 2, now: now)
+                        AccountRow(usage: usage, rank: index + 2, now: now,
+                                   isCopied: copiedID == usage.id) { copy(usage) }
                         if index < others.count - 1 {
                             Divider().overlay(Palette.hairline)
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// Copies the account's launch command and flags the row for a moment.
+    /// The previous confirmation is cancelled so rapid clicks cannot leave a
+    /// stale "Copied" on a row you have since moved away from.
+    private func copy(_ usage: AccountUsage) {
+        AccountActions.copy(AccountActions.launchCommand(for: usage.account))
+        copyResetTask?.cancel()
+        withAnimation(.smooth(duration: 0.15)) { copiedID = usage.id }
+        copyResetTask = Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth(duration: 0.25)) { copiedID = nil }
         }
     }
 

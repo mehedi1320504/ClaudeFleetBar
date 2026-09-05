@@ -4,8 +4,21 @@ import SwiftUI
 struct RecommendedCard: View {
     let usage: AccountUsage
     let now: Date
+    let isCopied: Bool
+    let onCopy: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
+        Button(action: onCopy) { cardBody }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .accountContextMenu(usage.account)
+            .help("Click to copy: \(AccountActions.launchCommand(for: usage.account))")
+    }
+
+    private var cardBody: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Text("RUN NEXT")
@@ -13,7 +26,17 @@ struct RecommendedCard: View {
                     .tracking(0.9)
                     .foregroundStyle(Palette.tint(forUsed: 100 - (Ranking.headroom(usage) ?? 0)))
                 Spacer()
-                OriginBadge(usage: usage, now: now)
+                if isCopied {
+                    Label("Copied", systemImage: "checkmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Palette.tint(forUsed: 0))
+                } else if isHovering {
+                    Label("click to copy command", systemImage: "doc.on.doc")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Palette.subtle)
+                } else {
+                    OriginBadge(usage: usage, now: now)
+                }
             }
 
             HStack(alignment: .center, spacing: 14) {
@@ -43,12 +66,38 @@ struct RecommendedCard: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Palette.cardFill)
+                .fill(Palette.cardFill.opacity(isHovering ? 2.2 : 1))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Palette.hairline, lineWidth: 1)
+                .stroke(isHovering ? Palette.hairline.opacity(2.5) : Palette.hairline, lineWidth: 1)
         )
+    }
+}
+
+/// Right-click actions shared by the card and the rows.
+private struct AccountContextMenu: ViewModifier {
+    let account: Account
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button("Copy launch command") {
+                AccountActions.copy(AccountActions.launchCommand(for: account))
+            }
+            Button("Copy config dir path") {
+                AccountActions.copy(account.configDir)
+            }
+            Divider()
+            Button("Reveal config dir in Finder") {
+                AccountActions.revealConfigDir(account)
+            }
+        }
+    }
+}
+
+extension View {
+    func accountContextMenu(_ account: Account) -> some View {
+        modifier(AccountContextMenu(account: account))
     }
 }
 
@@ -81,14 +130,34 @@ struct WindowGauge: View {
 }
 
 /// A compact row for every account below the recommendation.
+///
+/// Clicking copies the command that runs Claude Code under this account, which
+/// is the thing you actually want once the board has told you which to pick.
 struct AccountRow: View {
     let usage: AccountUsage
     let rank: Int
     let now: Date
+    let isCopied: Bool
+    let onCopy: () -> Void
+
+    @State private var isHovering = false
 
     private var used: Double { 100 - (Ranking.headroom(usage) ?? 100) }
 
     var body: some View {
+        Button(action: onCopy) { rowBody }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(isHovering ? 0.06 : 0))
+            )
+            .accountContextMenu(usage.account)
+            .help(tooltip)
+    }
+
+    private var rowBody: some View {
         HStack(spacing: 10) {
             Text("\(rank)")
                 .font(.numeric(10, .medium))
@@ -107,11 +176,18 @@ struct AccountRow: View {
             Spacer(minLength: 6)
 
             VStack(alignment: .trailing, spacing: 2) {
-                if usage.hasNumbers {
+                if isCopied {
+                    Label("Copied", systemImage: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.tint(forUsed: 0))
+                        .transition(.opacity)
+                } else if usage.hasNumbers {
                     Text("\(Int((100 - used).rounded()))%")
                         .font(.numeric(13, .bold))
                         .foregroundStyle(Palette.tint(forUsed: used))
-                    Text("free").font(.system(size: 9)).foregroundStyle(Palette.subtle)
+                    Text(isHovering ? "copy" : "free")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Palette.subtle)
                 } else if let failure = usage.failure {
                     Text(failure.summary)
                         .font(.system(size: 10, weight: .medium))
@@ -123,7 +199,6 @@ struct AccountRow: View {
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 4)
-        .help(tooltip)
     }
 
     @ViewBuilder
@@ -147,6 +222,7 @@ struct AccountRow: View {
         if let f = usage.fiveHour { lines.append("5-hour: \(Format.percent(f.utilization)) used") }
         if let s = usage.sevenDay { lines.append("Weekly: \(Format.percent(s.utilization)) used") }
         if let failure = usage.failure { lines.append(failure.remedy) }
+        lines.append("Click to copy: \(AccountActions.launchCommand(for: usage.account))")
         return lines.joined(separator: "\n")
     }
 }
