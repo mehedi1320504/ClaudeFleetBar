@@ -55,6 +55,10 @@ enum UsageFailure: Sendable, Equatable {
     case noCredentials
     case credentialsExpired
     case credentialsUnreadable
+    /// The login Keychain wants the operator's permission before this app
+    /// may read the token, and this app refuses to pop that dialog from a
+    /// background refresh. The row offers a button that asks exactly once.
+    case keychainDenied
     /// The usage endpoint answered 429 for this account. That is the
     /// endpoint throttling reads, not the account being out of quota.
     /// `retryAt` is when this app will ask again.
@@ -66,6 +70,7 @@ enum UsageFailure: Sendable, Equatable {
         case .noCredentials: "not signed in"
         case .credentialsExpired: "auth expired"
         case .credentialsUnreadable: "keychain unreadable"
+        case .keychainDenied: "keychain locked"
         case .rateLimited: "rate limited"
         case .network(let detail): detail
         }
@@ -76,12 +81,16 @@ enum UsageFailure: Sendable, Equatable {
         switch self {
         case .noCredentials, .credentialsExpired, .credentialsUnreadable:
             "Run any `claude` command with this account's CLAUDE_CONFIG_DIR to re-auth."
+        case .keychainDenied:
+            "macOS wants your permission before this app may read this account's token. Grant it once: enter your login password and choose Always Allow."
         case .rateLimited:
             "The usage API is throttling reads for this account — not a spent quota. Showing the last live reading."
         case .network:
             "Retry — the usage API did not answer."
         }
     }
+
+    var needsGrant: Bool { self == .keychainDenied }
 
     var retryAt: Date? {
         if case .rateLimited(let at) = self { return at }

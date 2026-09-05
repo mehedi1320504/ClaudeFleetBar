@@ -8,6 +8,9 @@ import SwiftUI
 struct AccountDetail: View {
     let usage: AccountUsage
     let now: Date
+    /// Present only where a row can act on a locked keychain item — the
+    /// recommended card never shows one, since a locked row is never recommended.
+    var onGrant: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -47,6 +50,10 @@ struct AccountDetail: View {
                              : "Retrying on the next refresh")
                             .font(.numeric(10, .medium))
                             .foregroundStyle(Palette.subtle)
+                    }
+                    if failure.needsGrant, let onGrant {
+                        GrantAccessButton(action: onGrant)
+                            .padding(.top, 4)
                     }
                 }
             }
@@ -133,6 +140,7 @@ struct AccountRow: View {
     let isCopied: Bool
     let onToggle: () -> Void
     let onCopy: () -> Void
+    let onGrant: () -> Void
 
     @State private var isHovering = false
 
@@ -163,7 +171,7 @@ struct AccountRow: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
-                    AccountDetail(usage: usage, now: now)
+                    AccountDetail(usage: usage, now: now, onGrant: onGrant)
                     CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
                 }
                 .padding(.top, 10)
@@ -302,6 +310,36 @@ struct CopyCommandButton: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(AccountActions.launchCommand(for: account))
+    }
+}
+
+/// The one Keychain dialog this app ever raises, and only when clicked.
+/// "Always Allow" in that dialog puts the app on the item for good.
+struct GrantAccessButton: View {
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.open")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("Grant Keychain access\u{2026}")
+                    .font(.system(size: 10, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.tint(forUsed: 0))
+            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Palette.tint(forUsed: 0).opacity(isHovering ? 0.18 : 0.12))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Opens the macOS Keychain prompt once. Enter your login password and choose Always Allow.")
     }
 }
 

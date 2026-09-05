@@ -61,12 +61,22 @@ cd ClaudeFleetBar
 open dist/ClaudeFleetBar.app
 ```
 
-macOS will ask for Keychain access once per account. Choose **Always Allow**.
+It should not ask for Keychain access at all. Claude Code writes each credential
+with `/usr/bin/security`, which stamps the item with an `apple-tool:` partition;
+any other app reading it gets the "enter your login keychain password" dialog,
+and **Allow** covers a single read. A poller that read five items every two
+minutes turned that into a dialog every two minutes. So the app reads with
+keychain interaction switched off, and when the keychain would have asked, it
+reads through `security` itself, which is inside the partition and is answered
+silently. If a row ever says **keychain locked**, click **Grant Keychain access**,
+enter your login password once, and choose **Always Allow** — that is the only
+dialog the app ever raises, and only when clicked.
 
-> **If it re-asks on every build**, that is the ad-hoc signature. The login
-> Keychain ties an access grant to the code hash, and an ad-hoc seal produces a
-> new one each build — so every rebuild looks like a different app. Sign with a
-> Developer ID instead, whose designated requirement is stable across builds:
+> **If that grant does not stick across rebuilds**, that is the ad-hoc signature.
+> The login Keychain ties an access grant to the code hash, and an ad-hoc seal
+> produces a new one each build — so every rebuild looks like a different app.
+> Sign with a Developer ID instead, whose designated requirement is stable
+> across builds:
 >
 > ```sh
 > DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)" ./scripts/build-app.sh
@@ -126,7 +136,7 @@ CLAUDE_CONFIG_DIR="$HOME/.claude-account-$(fleet-usage best)" claude
 | --- | --- |
 | Discover | Scan `~` for `.claude-account-*` and `.claude` |
 | Locate credentials | Claude Code keys its Keychain entry as `Claude Code-credentials-<first 8 hex of sha256(configDir)>`, so each config dir maps to its own item |
-| Read token | `SecItemCopyMatching` → `claudeAiOauth.accessToken` (read-only) |
+| Read token | `SecItemCopyMatching` with keychain interaction disabled → `claudeAiOauth.accessToken`. When the keychain would have prompted (the item's `apple-tool:` partition), `/usr/bin/security find-generic-password -w` reads it instead — same tool that wrote it, so no dialog. Read-only either way |
 | Fetch usage | `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer …` and `anthropic-beta: oauth-2025-04-20` — the same endpoint the CLI uses to fill its own cache |
 | Fall back | When a read fails — a 429, a network error, an expired token — keep this app's own last live reading, labelled with its age; with none, show `cachedUsageUtilization` from `.claude.json`, labelled the same way. A window whose reset has passed since the reading is dropped from the ranking: it describes a window that no longer exists |
 | Back off | A 429 puts that ONE account on a per-account backoff (one refresh cycle, doubling, capped at 10 minutes; a real `Retry-After` is honoured up to an hour). The manual refresh button ignores the backoff. Alerts never fire on a failed read — a read failure is a change in our view, not in the account |
@@ -136,6 +146,8 @@ Accounts are fetched concurrently, so one slow or broken account never holds up 
 ### What it never does
 
 - Write to the Keychain, or touch the CLI's auth state.
+- Put a Keychain dialog on screen from a background refresh. The one it raises is
+  the **Grant Keychain access** button, when you click it.
 - Spend tokens. The usage endpoint is free and read-only — it reports the limits, it
   does not count against them — and this app never sends a message to measure one.
   Five accounts at the default 2-minute interval is 2.5 requests a minute in total.

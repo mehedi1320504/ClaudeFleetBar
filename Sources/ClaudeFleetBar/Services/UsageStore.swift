@@ -53,9 +53,21 @@ final class UsageStore {
     func start() {
         guard !didStart else { return }
         didStart = true
+        // A background refresh must never put a Keychain dialog on screen.
+        // Reads that would need one go through `security`, or surface a row
+        // with a "Grant access" button that asks on purpose.
+        KeychainCredentials.silenceDialogs()
         holdOffAppNap()
         restartTimer()
         Task { await refresh() }
+    }
+
+    /// The one deliberate Keychain dialog: the operator clicked "Grant
+    /// access" on a row, so asking is what they want. "Always Allow" puts this
+    /// app on the item for good; the refresh right after shows the result.
+    func grantKeychainAccess(_ account: Account) async {
+        _ = try? KeychainCredentials.grant(for: account)
+        await refresh(force: true)
     }
 
     /// A menu bar app with no windows is exactly what App Nap targets: macOS
@@ -169,9 +181,11 @@ final class UsageStore {
     private nonisolated static func resolve(_ account: Account, api: UsageAPI) async -> Fetch {
         let credentials: KeychainCredentials.Credentials
         do {
-            credentials = try KeychainCredentials.load(for: account)
+            credentials = try await KeychainCredentials.load(for: account)
         } catch KeychainCredentials.Failure.notFound {
             return .failed(.noCredentials)
+        } catch KeychainCredentials.Failure.needsGrant {
+            return .failed(.keychainDenied)
         } catch {
             return .failed(.credentialsUnreadable)
         }

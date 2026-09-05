@@ -114,7 +114,8 @@ struct FleetBoardView: View {
                             isExpanded: expandedID == usage.id,
                             isCopied: copiedID == usage.id,
                             onToggle: { toggle(usage) },
-                            onCopy: { copy(usage) }
+                            onCopy: { copy(usage) },
+                            onGrant: { grant(usage) }
                         )
                         if index < others.count - 1 {
                             Divider().overlay(Palette.hairline)
@@ -174,6 +175,11 @@ struct FleetBoardView: View {
             guard !Task.isCancelled else { return }
             withAnimation(.smooth(duration: 0.25)) { copiedID = nil }
         }
+    }
+
+    /// Raises the Keychain dialog for one account, because the operator asked.
+    private func grant(_ usage: AccountUsage) {
+        Task { await store.grantKeychainAccess(usage.account) }
     }
 
     private var allSpent: some View {
