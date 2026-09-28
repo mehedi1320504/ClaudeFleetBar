@@ -38,8 +38,9 @@ private func printCodexReportAndExit() -> Never {
         print("")
     }
     print(String(repeating: "─", count: 72))
-    print("state is LIVE (probe cache + running lanes' logs); any percentage is a")
-    print("RECORDED reading from a past interactive session and carries its age.")
+    print("state is LIVE (probe cache + running lanes' logs). The percentage is")
+    print("recorded by codex itself once per turn, so it is live while a lane runs")
+    print("and goes stale once none does — which is why it always carries its age.")
     exit(0)
 }
 
