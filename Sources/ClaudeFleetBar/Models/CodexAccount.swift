@@ -82,12 +82,20 @@ struct CodexUsage: Sendable, Equatable, Identifiable {
     let liveLanes: Int
     /// The last rate-limit reading Codex itself recorded, and WHEN.
     ///
-    /// Deliberately optional and always shown with its age. `codex exec` — the
-    /// mode every fleet lane runs in — writes no session rollout file and logs
-    /// no rate limits, so this reading only exists when someone used codex
-    /// INTERACTIVELY, and can be weeks old. Presenting it as a live figure would
-    /// be the same defect this whole estate keeps paying for: one number
-    /// standing for two states, and collapsing toward the reassuring one.
+    /// `codex exec` — the mode every fleet lane runs in — DOES write these, once
+    /// per turn, into `$CODEX_HOME/sessions/<date>/rollout-*.jsonl`. A seat with a
+    /// lane running therefore has a genuinely LIVE figure, seconds old. Measured
+    /// 2026-09-29: the lane dispatched at 04:38 had written 99 readings by 05:07.
+    ///
+    /// ★ I first recorded the opposite here — "exec writes no rollout" — on the
+    /// strength of `find -newermt`, which BSD find does not support: it matched
+    /// nothing, and NOTHING-MATCHED looked exactly like NO-SUCH-FILES. The same
+    /// collapsed-value shape as every other false signal in this estate, in the
+    /// probe rather than in the product.
+    ///
+    /// It stays optional and always carries its age, because the reading only
+    /// advances while a lane runs: a seat idle for a week has a week-old number,
+    /// and a 7-day window read a week late says nothing useful.
     let usedPercent: Double?
     let windowMinutes: Int?
     let resetsAt: Date?

@@ -8,14 +8,13 @@ import SwiftUI
 /// That is what matters when the Claude accounts are spent, which is the moment
 /// this section was asked for.
 ///
-/// It deliberately does NOT show a headroom percentage in the same visual weight
-/// as the Claude rows, because there is no live one to show. `codex exec` — the
-/// mode every fleet lane runs in — writes no rollout file and reports no rate
-/// limits, so the only percentage available comes from a past INTERACTIVE
-/// session and can be weeks old. Rendering that as a live gauge beside a live
-/// one would be a number standing for two different things, which is the exact
-/// defect class this estate keeps paying for. So the reading appears small,
-/// always with its age, and greyed once it is too old to steer by.
+/// The headroom percentage is REAL and usually live: `codex exec` records a
+/// rate-limit reading every turn, so a seat with a lane running is seconds
+/// fresh. It is still rendered with its age beside it and greyed once stale,
+/// because the reading only advances while a lane runs — an idle seat's number
+/// is as old as its last lane, and a 7-day window read a week late is not a
+/// smaller number but a meaningless one. Age is what separates those two, so the
+/// number is never shown without it.
 struct CodexSection: View {
     let rows: [CodexUsage]
     let now: Date
@@ -119,11 +118,13 @@ struct CodexRow: View {
                     }
                 } else {
                     // Absence is stated, not left blank — a blank cell reads as
-                    // "fine" and this one means "nobody has measured it".
+                    // "fine" and this one means "nobody has measured it". A seat
+                    // reaches here only when no lane has ever run under this
+                    // CODEX_HOME, since every `codex exec` turn records one.
                     Text("no reading")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Palette.subtle.opacity(0.7))
-                    Text("codex exec records none")
+                    Text("no lane has run here")
                         .font(.system(size: 8))
                         .foregroundStyle(Palette.subtle.opacity(0.55))
                 }

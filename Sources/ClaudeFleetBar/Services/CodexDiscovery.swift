@@ -156,11 +156,12 @@ enum CodexDiscovery {
     ///
     /// ═══ READ THE AGE, ALWAYS ═══
     ///
-    /// `codex exec` — the mode EVERY fleet lane runs in — writes no rollout file
-    /// and logs no rate limits. So this exists only when someone used codex
-    /// interactively under this CODEX_HOME, and on a fleet-only seat it can be
-    /// weeks stale or absent entirely. It is returned with `takenAt` so the view
-    /// can never render it as a live figure.
+    /// `codex exec` writes one of these per turn, so a seat with a running lane
+    /// has a reading seconds old — a genuinely live headroom figure. But the
+    /// reading only ADVANCES while a lane runs: an idle seat's newest rollout is
+    /// as old as its last lane. So this is returned with `takenAt` and the view
+    /// shows the age beside the number, always. A 7-day window read a week late
+    /// is not a smaller number, it is a meaningless one.
     static func lastRateLimit(account: CodexAccount)
         -> (usedPercent: Double, windowMinutes: Int, resetsAt: Date?, takenAt: Date, hasCredits: Bool?)? {
         let fm = FileManager.default
