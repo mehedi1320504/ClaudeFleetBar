@@ -22,6 +22,15 @@ struct AccountSuffixTests {
         #expect(AccountDiscovery.isPlausibleAccountSuffix("-") == false)
     }
 
+    @Test("a lock file beside an account is not an account")
+    func lockFile() {
+        // Also on this machine: `~/.claude-account-f.lock`, which is account f's
+        // lock, not an eighth account. It would have rendered as a tenth dead
+        // row. A dot is not part of an account name.
+        #expect(AccountDiscovery.isPlausibleAccountSuffix("f.lock") == false)
+        #expect(AccountDiscovery.isPlausibleAccountSuffix("a.tmp") == false)
+    }
+
     @Test("every real account name still passes")
     func realNamesPass() {
         // The filter must never be able to hide a real account — that failure
