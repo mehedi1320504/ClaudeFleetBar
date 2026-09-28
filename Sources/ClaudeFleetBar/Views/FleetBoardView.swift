@@ -40,6 +40,11 @@ struct FleetBoardView: View {
                 }
             }
 
+            if !codexRows.isEmpty {
+                Divider().overlay(Palette.hairline)
+                CodexSection(rows: codexRows, now: now)
+            }
+
             Divider().overlay(Palette.hairline)
             footer
         }
@@ -49,6 +54,14 @@ struct FleetBoardView: View {
         .task { await runClock() }
         .onAppear { Task { await store.refreshIfStale(olderThan: 20) } }
     }
+
+    /// Codex seats, recomputed from local state on each clock tick.
+    ///
+    /// Deliberately NOT part of `UsageStore`: that store's refresh spends a
+    /// Claude API call per account, and nothing about a Codex seat should ever
+    /// be a reason to burn one. Everything here is read from disk — the fleet's
+    /// own state dir, its probe cache, and Codex's session files.
+    private var codexRows: [CodexUsage] { CodexDiscovery.rows(now: now) }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
