@@ -14,7 +14,8 @@ import SwiftUI
 /// only advances while a lane runs, and an idle seat's is as old as its last one.
 @MainActor
 private func printCodexReportAndExit() -> Never {
-    let rows = CodexDiscovery.rows()
+    // ttl: 0 — a diagnostic that could print a cached answer is not a diagnostic.
+    let rows = CodexDiscovery.rows(ttl: 0)
     print("CODEX SEATS — what the board's Codex section shows right now")
     print(String(repeating: "─", count: 72))
     if rows.isEmpty {

@@ -120,3 +120,62 @@ struct CodexReadingTests {
         #expect(row(takenAt: nil).ageLabel == nil)
     }
 }
+
+@Suite("A rollout is read from its tail, not whole")
+struct RolloutTailTests {
+
+    /// Builds a rollout the shape a long-running lane produces: the reading we
+    /// want is the LAST line, behind megabytes of transcript.
+    private func makeRollout(padMB: Int) throws -> CodexAccount {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("codex-tail-\(UUID().uuidString)")
+        let day = root.appendingPathComponent("sessions/2026/09/29")
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let noise = #"{"type":"msg","text":"'# + String(repeating: "x", count: 900) + #""}"# + "\n"
+        var body = ""
+        body.reserveCapacity(padMB * 1_048_576 + 4096)
+        // An OLD reading first, so a tail that is too greedy would find the wrong one.
+        body += #"{"rate_limits":{"primary":{"used_percent":11.0,"window_minutes":10080}}}"# + "\n"
+        while body.utf8.count < padMB * 1_048_576 { body += noise }
+        // The CURRENT reading, last.
+        body += #"{"rate_limits":{"primary":{"used_percent":73.0,"window_minutes":10080},"credits":{"has_credits":false}}}"# + "\n"
+
+        try body.write(to: day.appendingPathComponent("rollout-2026-09-29T04-38-13-abc.jsonl"),
+                       atomically: true, encoding: .utf8)
+        return CodexAccount(configDir: root.path, label: "t", email: nil, plan: nil)
+    }
+
+    @Test("it finds the newest reading behind megabytes of transcript")
+    func findsNewestBehindBulk() throws {
+        let account = try makeRollout(padMB: 8)
+        defer { try? FileManager.default.removeItem(atPath: account.configDir) }
+
+        let reading = CodexDiscovery.lastRateLimit(account: account)
+        // 73 is the LAST reading. 11 is the first — a backwards scan that gave up
+        // early, or a tail window that landed short, would return 11 or nil.
+        #expect(reading?.usedPercent == 73.0)
+        #expect(reading?.windowMinutes == 10_080)
+        #expect(reading?.hasCredits == false)
+    }
+
+    @Test("★ and it does it without the cost of reading the whole file")
+    func staysFastOnABigRollout() throws {
+        let account = try makeRollout(padMB: 8)
+        defer { try? FileManager.default.removeItem(atPath: account.configDir) }
+
+        let started = Date.now
+        _ = CodexDiscovery.lastRateLimit(account: account)
+        let ms = Date.now.timeIntervalSince(started) * 1000
+
+        // OBSERVED: reading a 10.4 MB rollout whole and splitting it cost ~19 ms,
+        // from a view body driven by a ONE-SECOND clock — which is what made the
+        // menu bar feel slow, and got worse the longer a lane ran. A tail read of
+        // the same file answered identically in 0.2 ms.
+        //
+        // The bound is deliberately loose (CI is slower than a laptop) but far
+        // under what a whole-file read of 8 MB costs, so restoring that regresses
+        // this test rather than only the feel of the app.
+        #expect(ms < 8, "took \(Int(ms))ms — is it reading the whole rollout again?")
+    }
+}

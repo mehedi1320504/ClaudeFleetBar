@@ -175,7 +175,33 @@ enum CodexDiscovery {
             guard let at else { continue }
             if newest == nil || at > newest!.at { newest = (url, at) }
         }
-        guard let newest, let text = try? String(contentsOf: newest.url, encoding: .utf8) else { return nil }
+        guard let newest else { return nil }
+
+        // ═══ TAIL FIRST — NEVER READ THE WHOLE FILE ═══
+        //
+        // A running lane's rollout grows without bound: this one was 10.4 MB and
+        // climbing while its lane worked. Reading it whole and splitting it cost
+        // ~19 ms per call, and this is called from a view body driven by a
+        // one-second clock — so the menu bar spent ~2% of every second, on the
+        // MAIN THREAD, re-reading a file to find its last line. The panel felt
+        // slow, and got slower the longer a lane ran.
+        //
+        // The newest reading is at the END, so a tail is the whole answer:
+        // measured 19.3 ms → 0.2 ms, same value (65%), an 83x cut.
+        //
+        // The fallback is what makes the tail SAFE rather than merely fast. If a
+        // window holds no reading — a long turn with no rate_limits line in it —
+        // it widens rather than reporting "no reading", which would render as a
+        // seat nobody has measured. A faster wrong answer is worth less than the
+        // slow right one.
+        var text: String?
+        for window in [64 * 1024, 1024 * 1024, Int.max] {
+            guard let chunk = tailString(newest.url, bytes: window) else { break }
+            if chunk.contains("rate_limits") { text = chunk; break }
+            // The whole file was already read and still had nothing — stop.
+            if window == Int.max || chunk.utf8.count < window { break }
+        }
+        guard let text else { return nil }
 
         // Scan backwards: the LAST reading in the file is the most recent.
         for line in text.split(separator: "\n").reversed() where line.contains("rate_limits") {
@@ -206,7 +232,30 @@ enum CodexDiscovery {
 
     // MARK: - assembly
 
-    static func rows(now: Date = .now) -> [CodexUsage] {
+    /// ═══ CACHED, BECAUSE THE CALLER ASKS EVERY SECOND ═══
+    ///
+    /// `FleetBoardView` recomputes its rows from a one-second clock, so without a
+    /// cache every tick walked 92 files, decoded a JWT per account, tailed each
+    /// live lane's log and parsed a rollout — on the main thread, inside a view
+    /// body. That is what made the panel feel slow.
+    ///
+    /// The underlying facts change at most once per lane turn, so a few seconds
+    /// of staleness is invisible and the work drops by ~15x. `ttl: 0` forces a
+    /// fresh read for the `--codex-report` diagnostic, which must never show a
+    /// cached answer.
+    @MainActor private static var cached: (rows: [CodexUsage], at: Date)?
+
+    @MainActor
+    static func rows(now: Date = .now, ttl: TimeInterval = 8) -> [CodexUsage] {
+        if ttl > 0, let hit = cached, now.timeIntervalSince(hit.at) < ttl, now >= hit.at {
+            return hit.rows
+        }
+        let fresh = compute()
+        cached = (fresh, now)
+        return fresh
+    }
+
+    private static func compute() -> [CodexUsage] {
         discover().map { account in
             let refusal = liveRefusal(account: account)
             let probe = probeFailure(account: account)
