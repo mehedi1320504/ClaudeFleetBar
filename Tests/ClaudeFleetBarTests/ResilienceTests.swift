@@ -201,3 +201,45 @@ struct ThrottledRemedyTests {
         #expect(cached.remedy?.contains("CLI's cached reading") == true)
     }
 }
+
+@Suite("Readings survive a relaunch")
+struct RelaunchTests {
+    private func account(_ label: String) -> Account {
+        Account(configDir: "/tmp/.claude-account-\(label)", label: label, email: nil, displayName: nil)
+    }
+
+    @Test("live and stale readings come back with their original fetch time; CLI-cache rows do not")
+    func roundTrip() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-relaunch-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let now = Date(timeIntervalSince1970: 1_791_000_000)
+        let earlier = now.addingTimeInterval(-3_000)
+        let five = UsageWindow(utilization: 12, resetsAt: now.addingTimeInterval(3_600))
+        let seven = UsageWindow(utilization: 40, resetsAt: now.addingTimeInterval(86_400))
+        let rows = [
+            AccountUsage(account: account("a"), fiveHour: five, sevenDay: seven,
+                         origin: .live, failure: nil, plan: "team"),
+            AccountUsage(account: account("f"), fiveHour: five, sevenDay: nil,
+                         origin: .stale(fetchedAt: earlier), failure: .credentialsExpired, plan: nil),
+            AccountUsage(account: account("e"), fiveHour: five, sevenDay: seven,
+                         origin: .cache(fetchedAt: earlier), failure: .credentialsExpired, plan: nil),
+            .failed(account("b"), .noCredentials),
+        ]
+        SnapshotExporter.write(rows, now: now, to: url)
+        let back = SnapshotExporter.lastLiveReadings(from: url)
+
+        #expect(Set(back.keys) == [account("a").id, account("f").id])
+        let a = try #require(back[account("a").id])
+        #expect(a.at == now && a.plan == "team" && a.fiveHour == five && a.sevenDay == seven)
+        let f = try #require(back[account("f").id])
+        #expect(f.at == earlier && f.sevenDay == nil)
+    }
+
+    @Test("a missing or unreadable export starts empty")
+    func missing() {
+        let url = URL(fileURLWithPath: "/nonexistent/usage.json")
+        #expect(SnapshotExporter.lastLiveReadings(from: url).isEmpty)
+    }
+}

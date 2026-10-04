@@ -10,7 +10,15 @@ enum SnapshotExporter {
             .appendingPathComponent(".cache/claude-fleet-bar/usage.json")
     }
 
-    static func write(_ usages: [AccountUsage], now: Date = .now) {
+    /// One account's last live reading, as kept across a relaunch.
+    struct Reading: Sendable, Equatable {
+        let fiveHour: UsageWindow?
+        let sevenDay: UsageWindow?
+        let plan: String?
+        let at: Date
+    }
+
+    static func write(_ usages: [AccountUsage], now: Date = .now, to url: URL = path) {
         let ordered = Ranking.runOrder(usages, now: now)
         let payload: [String: Any] = [
             "generated_at": ISO8601.string(now),
@@ -34,6 +42,7 @@ enum SnapshotExporter {
                 row["headroom"] = Ranking.headroom(usage, now: now) as Any? ?? NSNull()
                 row["five_hour"] = window(usage.fiveHour)
                 row["seven_day"] = window(usage.sevenDay)
+                row["plan"] = usage.plan as Any? ?? NSNull()
                 row["error"] = usage.failure?.summary as Any? ?? NSNull()
                 row["retry_at"] = usage.failure?.retryAt.map { ISO8601.string($0) } as Any? ?? NSNull()
                 return row
@@ -45,9 +54,42 @@ enum SnapshotExporter {
         ) else { return }
 
         try? FileManager.default.createDirectory(
-            at: path.deletingLastPathComponent(), withIntermediateDirectories: true
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        try? data.write(to: path, options: .atomic)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// The last live readings this app exported, by config dir — what a
+    /// relaunch starts from. Without it an update or restart blanked every
+    /// account whose token had since expired: the numbers lived only in
+    /// memory, and on 2026-10-04 the 1.1.1 update wiped A, F, J and K.
+    ///
+    /// Only this app's own readings ("live", or "stale" carrying its original
+    /// fetch time) come back. A "cache" row is the CLI's file, which the
+    /// fallback reads first-hand anyway.
+    static func lastLiveReadings(from url: URL = path) -> [String: Reading] {
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = root["accounts"] as? [[String: Any]]
+        else { return [:] }
+
+        var out: [String: Reading] = [:]
+        for row in rows {
+            guard let origin = row["origin"] as? String, origin == "live" || origin == "stale",
+                  let dir = row["config_dir"] as? String,
+                  let at = ISO8601.date(row["fetched_at"] as? String)
+            else { continue }
+            let five = readWindow(row["five_hour"])
+            let seven = readWindow(row["seven_day"])
+            guard five != nil || seven != nil else { continue }
+            out[dir] = Reading(fiveHour: five, sevenDay: seven, plan: row["plan"] as? String, at: at)
+        }
+        return out
+    }
+
+    private static func readWindow(_ raw: Any?) -> UsageWindow? {
+        guard let raw = raw as? [String: Any], let u = raw["utilization"] as? Double else { return nil }
+        return UsageWindow(utilization: u, resetsAt: ISO8601.date(raw["resets_at"] as? String))
     }
 
     private static func originName(_ origin: UsageOrigin?) -> String? {

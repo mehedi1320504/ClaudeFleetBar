@@ -33,7 +33,8 @@ final class UsageStore {
     /// refresh fails this is what the row keeps showing — labelled with its
     /// age — instead of blanking an account that read 86% headroom two
     /// minutes ago and sinking it to the bottom of the run order.
-    private var lastLive: [Account.ID: (usage: AccountUsage, at: Date)] = [:]
+    /// Seeded from this app's own last export, so a relaunch keeps them too.
+    private var lastLive: [Account.ID: SnapshotExporter.Reading]
 
     /// Per-account throttle state: consecutive 429s and when to ask again.
     /// The usage endpoint limits reads per account, so one throttled account
@@ -42,6 +43,7 @@ final class UsageStore {
 
     init(notifier: Notifier = Notifier()) {
         self.notifier = notifier
+        self.lastLive = SnapshotExporter.lastLiveReadings()
         let stored = UserDefaults.standard.double(forKey: Self.intervalKey)
         self.refreshInterval = stored > 0 ? stored : 120
     }
@@ -150,7 +152,8 @@ final class UsageStore {
         for account in accounts {
             switch fetched[account.id] {
             case .live(let usage)?:
-                lastLive[account.id] = (usage, now)
+                lastLive[account.id] = .init(fiveHour: usage.fiveHour, sevenDay: usage.sevenDay,
+                                             plan: usage.plan, at: now)
                 throttle[account.id] = nil
                 rows.append(usage)
             case .throttled(let retryAfter)?:
@@ -217,11 +220,11 @@ final class UsageStore {
         if let last = lastLive[account.id] {
             return AccountUsage(
                 account: account,
-                fiveHour: last.usage.fiveHour,
-                sevenDay: last.usage.sevenDay,
+                fiveHour: last.fiveHour,
+                sevenDay: last.sevenDay,
                 origin: .stale(fetchedAt: last.at),
                 failure: failure,
-                plan: last.usage.plan
+                plan: last.plan
             )
         }
         return Self.fromCliCache(account, failure: failure)
