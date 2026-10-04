@@ -33,6 +33,10 @@ enum KeychainCredentials {
         /// The keychain wants the operator's say-so before this app may read
         /// the item, and the silent paths could not get around asking.
         case needsGrant
+        /// The item is there and well-formed but its token is blank: the CLI
+        /// clears `accessToken` and `expiresAt` when the account logs out or
+        /// its refresh fails for good. That wants a `/login`, not a keychain fix.
+        case signedOut
     }
 
     /// Longest we wait for `security` before treating the read as blocked on
@@ -170,8 +174,9 @@ enum KeychainCredentials {
     static func parse(_ data: Data) throws -> Credentials {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = root["claudeAiOauth"] as? [String: Any],
-              let token = oauth["accessToken"] as? String, !token.isEmpty
+              let token = oauth["accessToken"] as? String
         else { throw Failure.malformed }
+        guard !token.isEmpty else { throw Failure.signedOut }
 
         let expiresMs = (oauth["expiresAt"] as? Double) ?? 0
         return Credentials(

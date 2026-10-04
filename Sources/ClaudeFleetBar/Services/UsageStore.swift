@@ -182,7 +182,7 @@ final class UsageStore {
         let credentials: KeychainCredentials.Credentials
         do {
             credentials = try await KeychainCredentials.load(for: account)
-        } catch KeychainCredentials.Failure.notFound {
+        } catch KeychainCredentials.Failure.notFound, KeychainCredentials.Failure.signedOut {
             return .failed(.noCredentials)
         } catch KeychainCredentials.Failure.needsGrant {
             return .failed(.keychainDenied)

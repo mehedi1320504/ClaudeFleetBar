@@ -52,6 +52,16 @@ struct CredentialParseTests {
             try KeychainCredentials.parse(Data("not json".utf8))
         }
     }
+
+    @Test("a blanked token is a logged-out account, not an unreadable keychain")
+    func signedOut() {
+        // What the CLI leaves behind after a logout: the item, scopes and plan
+        // intact, the token and expiry zeroed. Seen on account B, 2026-10-04.
+        let blank = #"{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"team"}}"#
+        #expect(throws: KeychainCredentials.Failure.signedOut) {
+            try KeychainCredentials.parse(Data(blank.utf8))
+        }
+    }
 }
 
 @Suite("Locked keychain row")

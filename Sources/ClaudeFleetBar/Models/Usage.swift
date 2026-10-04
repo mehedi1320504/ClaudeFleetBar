@@ -111,6 +111,21 @@ struct AccountUsage: Sendable, Equatable, Identifiable {
 
     var hasNumbers: Bool { fiveHour != nil || sevenDay != nil }
 
+    /// The failure's remedy, told true to what this row actually shows.
+    /// "Showing the last live reading" is only so when there is one: a
+    /// throttled account this app never read, with no CLI cache either,
+    /// shows nothing at all.
+    var remedy: String? {
+        guard let failure else { return nil }
+        guard case .rateLimited = failure else { return failure.remedy }
+        let lead = "The usage API is throttling reads for this account — not a spent quota."
+        switch origin {
+        case .stale?: return "\(lead) Showing the last live reading."
+        case .cache?: return "\(lead) Showing the CLI's cached reading."
+        case .live?, nil: return "\(lead) No reading to show yet: this app has not had a live answer for it, and the CLI has no cached usage."
+        }
+    }
+
     /// The windows whose reading still describes a window that exists.
     func currentWindows(now: Date = .now) -> [UsageWindow] {
         [fiveHour, sevenDay].compactMap { $0 }.filter { !$0.hasRolledOver(now: now) }

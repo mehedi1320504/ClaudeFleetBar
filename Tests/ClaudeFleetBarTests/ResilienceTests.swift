@@ -177,3 +177,27 @@ struct NotifierTests {
         #expect(box.posted == ["Account D nearly spent"])
     }
 }
+
+@Suite("Throttled row copy")
+struct ThrottledRemedyTests {
+    private let account = Account(configDir: "/tmp/.claude-account-g", label: "g", email: nil, displayName: nil)
+    private let window = UsageWindow(utilization: 40, resetsAt: nil)
+
+    @Test("a throttled row with nothing to show does not claim to show a reading")
+    func noReading() throws {
+        let row = AccountUsage.failed(account, .rateLimited(retryAt: nil))
+        let remedy = try #require(row.remedy)
+        #expect(!remedy.contains("Showing"))
+        #expect(remedy.contains("No reading"))
+    }
+
+    @Test("stale and cached readings are named for what they are")
+    func origins() {
+        let stale = AccountUsage(account: account, fiveHour: window, sevenDay: nil,
+                                 origin: .stale(fetchedAt: .now), failure: .rateLimited(retryAt: nil), plan: nil)
+        let cached = AccountUsage(account: account, fiveHour: window, sevenDay: nil,
+                                  origin: .cache(fetchedAt: .now), failure: .rateLimited(retryAt: nil), plan: nil)
+        #expect(stale.remedy?.contains("last live reading") == true)
+        #expect(cached.remedy?.contains("CLI's cached reading") == true)
+    }
+}

@@ -38,9 +38,9 @@ struct AccountDetail: View {
                 WindowGauge(title: "Weekly", window: usage.sevenDay, now: now)
             }
 
-            if let failure = usage.failure {
+            if let failure = usage.failure, let remedy = usage.remedy {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(failure.remedy)
+                    Text(remedy)
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.tint(forUsed: 92))
                         .fixedSize(horizontal: false, vertical: true)
@@ -276,7 +276,7 @@ struct AccountRow: View {
         case .cache(let at): lines.append("From the CLI's cache, \(Format.countdown(to: now, now: at)) old")
         case .live, nil: break
         }
-        if let failure = usage.failure { lines.append(failure.remedy) }
+        if let remedy = usage.remedy { lines.append(remedy) }
         lines.append(isExpanded ? "Click to collapse" : "Click for detail")
         return lines.joined(separator: "\n")
     }
