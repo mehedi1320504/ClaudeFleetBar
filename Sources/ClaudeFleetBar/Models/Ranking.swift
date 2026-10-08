@@ -49,6 +49,19 @@ enum Ranking {
         }
     }
 
+    /// Accounts safe to receive new work, ordered best-first. A nil exclusion
+    /// set means the policy could not be read safely, so offer nothing.
+    static func dispatchOrder(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) -> [AccountUsage] {
+        guard let exclusions else { return [] }
+        return runOrder(usages, now: now).filter {
+            !exclusions.contains($0.account.label)
+        }
+    }
+
     /// Whether a reading is current enough to act on: live, or this app's
     /// own last live read from inside `trustWindow`. The CLI's file cache
     /// never qualifies — it dates from whenever that account last ran a
@@ -64,8 +77,12 @@ enum Ranking {
     /// The account to reach for right now — best headroom, not exhausted,
     /// and a reading we can trust. A throttled read of an account that was
     /// at 86% headroom two minutes ago still recommends that account.
-    static func recommended(_ usages: [AccountUsage], now: Date = .now) -> AccountUsage? {
-        runOrder(usages, now: now).first {
+    static func recommended(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) -> AccountUsage? {
+        dispatchOrder(usages, now: now, excluding: exclusions).first {
             guard let h = headroom($0, now: now), h > 0 else { return false }
             return isActionable($0, now: now)
         }
