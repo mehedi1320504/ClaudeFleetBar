@@ -14,6 +14,7 @@ struct FleetBoardView: View {
 
 
     var body: some View {
+        let exclusions = AccountExclusions.current
         VStack(alignment: .leading, spacing: 12) {
             header
 
@@ -25,18 +26,21 @@ struct FleetBoardView: View {
                 loadingState
             } else if store.usages.isEmpty {
                 emptyState
+            } else if exclusions == nil {
+                policyUnreadable
+                rest(excluding: nil, policy: nil)
             } else {
-                if let best = Ranking.recommended(store.usages, now: now) {
+                if let best = Ranking.recommended(store.usages, now: now, excluding: exclusions) {
                     RecommendedCard(usage: best, now: now,
                                     isCopied: copiedID == best.id) { copy(best) }
-                    rest(excluding: best)
+                    rest(excluding: best, policy: exclusions)
                 } else {
                     if store.usages.allSatisfy({ $0.failure != nil }) {
                         unreadable
                     } else {
                         allSpent
                     }
-                    rest(excluding: nil)
+                    rest(excluding: nil, policy: exclusions)
                 }
             }
 
@@ -109,28 +113,35 @@ struct FleetBoardView: View {
     }
 
     @ViewBuilder
-    private func rest(excluding best: AccountUsage?) -> some View {
-        let others = Ranking.runOrder(store.usages, now: now).filter { $0.id != best?.id }
-        if !others.isEmpty {
+    private func rest(excluding best: AccountUsage?, policy: Set<String>?) -> some View {
+        let sections = Ranking.boardSections(store.usages, now: now, best: best, excluding: policy)
+        accountSection(title: best == nil ? "ACCOUNTS" : "THEN", rows: sections.dispatchable)
+        accountSection(title: policy == nil ? "NOT DISPATCHABLE" : "EXCLUDED", rows: sections.excluded)
+    }
+
+    @ViewBuilder
+    private func accountSection(title: String, rows: [Ranking.BoardRow]) -> some View {
+        if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(best == nil ? "ACCOUNTS" : "THEN")
+                Text(title)
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .tracking(0.8)
                     .foregroundStyle(Palette.subtle)
 
                 VStack(spacing: 0) {
-                    ForEach(Array(others.enumerated()), id: \.element.id) { index, usage in
+                    ForEach(Array(rows.enumerated()), id: \.element.usage.id) { index, row in
                         AccountRow(
-                            usage: usage,
-                            rank: index + 2,
+                            usage: row.usage,
+                            rank: row.rank,
+                            allowsLaunchCommand: row.allowsLaunchCommand,
                             now: now,
-                            isExpanded: expandedID == usage.id,
-                            isCopied: copiedID == usage.id,
-                            onToggle: { toggle(usage) },
-                            onCopy: { copy(usage) },
-                            onGrant: { grant(usage) }
+                            isExpanded: expandedID == row.usage.id,
+                            isCopied: copiedID == row.usage.id,
+                            onToggle: { toggle(row.usage) },
+                            onCopy: { copy(row.usage) },
+                            onGrant: { grant(row.usage) }
                         )
-                        if index < others.count - 1 {
+                        if index < rows.count - 1 {
                             Divider().overlay(Palette.hairline)
                         }
                     }
@@ -207,6 +218,24 @@ struct FleetBoardView: View {
                         .font(.numeric(11, .medium))
                         .foregroundStyle(Palette.subtle)
                 }
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.cardFill))
+    }
+
+    private var policyUnreadable: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Palette.tint(forUsed: 100))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Exclusion policy is invalid").font(.system(size: 13, weight: .semibold))
+                Text("Dispatch recommendations and launch commands are disabled until the policy can be read.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }

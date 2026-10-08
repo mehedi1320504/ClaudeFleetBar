@@ -9,9 +9,10 @@ enum AccountExclusions {
     static let environmentName = "FLEET_EXCLUDE_ACCOUNTS"
     static let fileEnvironmentName = "FLEET_EXCLUDE_ACCOUNTS_FILE"
 
-    static var defaultFile: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/claude-fleet/exclude-accounts")
+    static func defaultFile(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        let home = environment["HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".config/claude-fleet/exclude-accounts")
     }
 
     static var current: Set<String>? { load() }
@@ -23,17 +24,25 @@ enum AccountExclusions {
         guard var result = parse(environment[environmentName] ?? "", comments: false) else {
             return nil
         }
-        let configured = environment[fileEnvironmentName].map {
-            URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath)
-        }
-        let url = fileURL ?? configured ?? defaultFile
-        if FileManager.default.fileExists(atPath: url.path) {
-            guard let raw = try? String(contentsOf: url, encoding: .utf8),
-                  let fromFile = parse(raw, comments: true)
-            else { return nil }
-            result.formUnion(fromFile)
+        let durable = fileURL ?? defaultFile(environment: environment)
+        guard let fromDurable = loadFile(durable) else { return nil }
+        result.formUnion(fromDurable)
+
+        if let override = environment[fileEnvironmentName], !override.isEmpty {
+            let url = URL(fileURLWithPath: NSString(string: override).expandingTildeInPath)
+            if url.standardizedFileURL != durable.standardizedFileURL {
+                guard let fromOverride = loadFile(url) else { return nil }
+                result.formUnion(fromOverride)
+            }
         }
         return result
+    }
+
+    private static func loadFile(_ url: URL) -> Set<String>? {
+        guard let raw = try? String(contentsOf: url, encoding: .utf8),
+              let parsed = parse(raw, comments: true), !parsed.isEmpty
+        else { return nil }
+        return parsed
     }
 
     private static func parse(_ raw: String, comments: Bool) -> Set<String>? {

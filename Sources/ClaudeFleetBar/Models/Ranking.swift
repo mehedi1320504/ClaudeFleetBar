@@ -7,6 +7,17 @@ import Foundation
 /// number: a 5-hour window refills in hours, a weekly one in days, so
 /// weekly capacity is the scarcer resource and is spent last.
 enum Ranking {
+    struct BoardRow {
+        let usage: AccountUsage
+        let rank: Int?
+        let allowsLaunchCommand: Bool
+    }
+
+    struct BoardSections {
+        let dispatchable: [BoardRow]
+        let excluded: [BoardRow]
+    }
+
     /// How old this app's own last live reading may be and still be acted
     /// on. Under a fleet, a 5-hour figure can move ten points in ten
     /// minutes; beyond this the row is still ranked and shown, but the
@@ -60,6 +71,35 @@ enum Ranking {
         return runOrder(usages, now: now).filter {
             !exclusions.contains($0.account.label)
         }
+    }
+
+    /// Rows for the board. Only dispatchable accounts receive a rank or a
+    /// launch action; excluded accounts remain visible as diagnostics.
+    static func boardSections(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        best: AccountUsage?,
+        excluding exclusions: Set<String>?
+    ) -> BoardSections {
+        let ordered = runOrder(usages, now: now)
+        guard let exclusions else {
+            return BoardSections(
+                dispatchable: [],
+                excluded: ordered.map { BoardRow(usage: $0, rank: nil, allowsLaunchCommand: false) }
+            )
+        }
+        let dispatchable = ordered.filter {
+            !exclusions.contains($0.account.label) && $0.id != best?.id
+        }
+        let firstRank = best == nil ? 1 : 2
+        return BoardSections(
+            dispatchable: dispatchable.enumerated().map {
+                BoardRow(usage: $0.element, rank: $0.offset + firstRank, allowsLaunchCommand: true)
+            },
+            excluded: ordered.filter { exclusions.contains($0.account.label) }.map {
+                BoardRow(usage: $0, rank: nil, allowsLaunchCommand: false)
+            }
+        )
     }
 
     /// Whether a reading is current enough to act on: live, or this app's

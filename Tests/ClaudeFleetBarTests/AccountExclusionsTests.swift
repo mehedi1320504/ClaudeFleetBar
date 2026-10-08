@@ -23,14 +23,23 @@ private func exclusionUsage(_ label: String, used: Double) -> AccountUsage {
 struct AccountExclusionsTests {
     @Test("environment and durable file form one set")
     func union() throws {
-        let url = FileManager.default.temporaryDirectory
+        let durable = FileManager.default.temporaryDirectory
             .appendingPathComponent("fleet-exclusions-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try "o, f # unavailable\nj k,l\n".write(to: url, atomically: true, encoding: .utf8)
+        let extra = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-exclusions-extra-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: durable)
+            try? FileManager.default.removeItem(at: extra)
+        }
+        try "o, f # unavailable\n".write(to: durable, atomically: true, encoding: .utf8)
+        try "j k,l\n".write(to: extra, atomically: true, encoding: .utf8)
 
         let labels = AccountExclusions.load(
-            environment: [AccountExclusions.environmentName: "h,m,o"],
-            fileURL: url
+            environment: [
+                AccountExclusions.environmentName: "h,m,o",
+                AccountExclusions.fileEnvironmentName: extra.path,
+            ],
+            fileURL: durable
         )
         #expect(labels == Set(["f", "h", "j", "k", "l", "m", "o"]))
     }
@@ -42,6 +51,38 @@ struct AccountExclusionsTests {
         defer { try? FileManager.default.removeItem(at: url) }
         try "h, account-m\n".write(to: url, atomically: true, encoding: .utf8)
         #expect(AccountExclusions.load(environment: [:], fileURL: url) == nil)
+    }
+
+    @Test("missing and empty durable policies fail closed")
+    func missingAndEmpty() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-exclusions-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(AccountExclusions.load(environment: [:], fileURL: url) == nil)
+        try "# truncated\n".write(to: url, atomically: true, encoding: .utf8)
+        #expect(AccountExclusions.load(environment: [:], fileURL: url) == nil)
+    }
+
+    @Test("an override only adds and a missing override fails closed")
+    func additiveOverride() throws {
+        let durable = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-exclusions-\(UUID().uuidString)")
+        let extra = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fleet-exclusions-extra-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: durable)
+            try? FileManager.default.removeItem(at: extra)
+        }
+        try "h,m,o\n".write(to: durable, atomically: true, encoding: .utf8)
+        try "f,j\n".write(to: extra, atomically: true, encoding: .utf8)
+        #expect(AccountExclusions.load(
+            environment: [AccountExclusions.fileEnvironmentName: extra.path],
+            fileURL: durable
+        ) == Set(["f", "h", "j", "m", "o"]))
+        #expect(AccountExclusions.load(
+            environment: [AccountExclusions.fileEnvironmentName: "/nonexistent/fleet-exclusions"],
+            fileURL: durable
+        ) == nil)
     }
 
     @Test("excluded accounts are neither ordered nor recommended")

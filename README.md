@@ -33,10 +33,13 @@ countdown to each reset.
 - **A run order**, not just numbers: headroom is `100 − max(5h, weekly)`, ties break
   toward the lower weekly figure, since a 5-hour window refills in hours and a weekly
   one in days.
-- **A shared exclusion policy.** `FLEET_EXCLUDE_ACCOUNTS` and
-  `~/.config/claude-fleet/exclude-accounts` form one set of comma-separated
-  account letters. Excluded accounts stay visible, but are absent from the menu
-  recommendation and the exported `recommended` / `run_order` fields.
+- **A shared, fail-closed exclusion policy.** `FLEET_EXCLUDE_ACCOUNTS`, the
+  durable `~/.config/claude-fleet/exclude-accounts` file, and the optional
+  additive file in `FLEET_EXCLUDE_ACCOUNTS_FILE` form one set. A missing, empty,
+  malformed, or unreadable file disables dispatch recommendations. Excluded
+  accounts stay visible in an unranked **EXCLUDED** section with no launch-copy
+  action, never produce a “good to dispatch” alert, and are absent from the
+  exported `recommended` / `run_order` fields.
 - **Transition-only alerts** when an account frees up, is nearly spent, or runs out.
   A notifier that fires every refresh is one you learn to ignore.
 - **Click an account to copy its launch command**

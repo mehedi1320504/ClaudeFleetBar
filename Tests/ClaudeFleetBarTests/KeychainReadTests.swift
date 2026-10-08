@@ -80,6 +80,6 @@ struct KeychainDeniedTests {
         let account = Account(configDir: "/tmp/.claude-account-d", label: "d", email: nil, displayName: nil)
         let row = AccountUsage.failed(account, .keychainDenied)
         #expect(Ranking.headroom(row) == nil)
-        #expect(Ranking.recommended([row]) == nil)
+        #expect(Ranking.recommended([row], excluding: []) == nil)
     }
 }
