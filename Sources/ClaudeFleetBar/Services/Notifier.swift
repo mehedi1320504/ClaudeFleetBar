@@ -37,9 +37,15 @@ final class Notifier: @unchecked Sendable {
             }
     }
 
-    func reportTransitions(from previous: [AccountUsage], to current: [AccountUsage]) {
+    func reportTransitions(
+        from previous: [AccountUsage],
+        to current: [AccountUsage],
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) {
+        guard let exclusions else { return }
         let wasEmpty = previous.isEmpty
         for usage in current {
+            guard !exclusions.contains(usage.account.label) else { continue }
             // A failed read is not a change in the account; it is a change in
             // our ability to see it. A throttled usage endpoint used to post
             // "Account E is out — resets in unknown", then "freed up" on the

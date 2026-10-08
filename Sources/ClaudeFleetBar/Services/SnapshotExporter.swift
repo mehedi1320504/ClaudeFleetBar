@@ -18,12 +18,18 @@ enum SnapshotExporter {
         let at: Date
     }
 
-    static func write(_ usages: [AccountUsage], now: Date = .now, to url: URL = path) {
+    static func write(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        to url: URL = path,
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) {
         let ordered = Ranking.runOrder(usages, now: now)
+        let dispatchOrder = Ranking.dispatchOrder(usages, now: now, excluding: exclusions)
         let payload: [String: Any] = [
             "generated_at": ISO8601.string(now),
-            "recommended": Ranking.recommended(usages, now: now)?.account.label as Any? ?? NSNull(),
-            "run_order": ordered.map(\.account.label),
+            "recommended": Ranking.recommended(usages, now: now, excluding: exclusions)?.account.label as Any? ?? NSNull(),
+            "run_order": dispatchOrder.map(\.account.label),
             "accounts": ordered.map { usage in
                 var row: [String: Any] = [
                     "label": usage.account.label,

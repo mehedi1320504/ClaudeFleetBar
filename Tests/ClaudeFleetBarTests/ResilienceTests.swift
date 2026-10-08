@@ -69,7 +69,7 @@ struct DegradedReadingTests {
                         origin: .stale(fetchedAt: now.addingTimeInterval(-120)),
                         failure: .rateLimited(retryAt: now.addingTimeInterval(240)))
         let b = reading("b", five: 49, seven: 17, origin: .live)
-        #expect(Ranking.recommended([b, e], now: now)?.account.label == "e")
+        #expect(Ranking.recommended([b, e], now: now, excluding: [])?.account.label == "e")
         #expect(Ranking.headroom(e, now: now) == 86)
     }
 
@@ -79,7 +79,7 @@ struct DegradedReadingTests {
                         origin: .stale(fetchedAt: now.addingTimeInterval(-(Ranking.trustWindow + 1))),
                         failure: .rateLimited(retryAt: nil))
         let b = reading("b", five: 49, seven: 17, origin: .live)
-        #expect(Ranking.recommended([b, e], now: now)?.account.label == "b")
+        #expect(Ranking.recommended([b, e], now: now, excluding: [])?.account.label == "b")
         #expect(Ranking.runOrder([b, e], now: now).map(\.account.label) == ["e", "b"])
     }
 
@@ -87,14 +87,14 @@ struct DegradedReadingTests {
     func cliCacheIsNeverActionable() {
         let a = reading("a", five: 10, seven: 10, origin: .cache(fetchedAt: now), failure: .network("HTTP 429"))
         #expect(Ranking.isActionable(a, now: now) == false)
-        #expect(Ranking.recommended([a], now: now) == nil)
+        #expect(Ranking.recommended([a], now: now, excluding: []) == nil)
     }
 
     @Test("a row with no reading at all is neither ranked nor recommended")
     func failedRow() {
         let c = AccountUsage.failed(account("c"), .rateLimited(retryAt: nil))
         #expect(Ranking.headroom(c, now: now) == nil)
-        #expect(Ranking.recommended([c], now: now) == nil)
+        #expect(Ranking.recommended([c], now: now, excluding: []) == nil)
     }
 
     /// Account E hit its session limit at 00:32 and the app kept "5h: 100%".
@@ -154,10 +154,10 @@ struct NotifierTests {
         let stale = reading("e", five: 30, seven: 20,
                             origin: .stale(fetchedAt: .now), failure: .rateLimited(retryAt: nil))
 
-        notifier.reportTransitions(from: [], to: [good])          // baseline
-        notifier.reportTransitions(from: [good], to: [throttled])  // 429, no numbers
-        notifier.reportTransitions(from: [throttled], to: [stale]) // 429, kept numbers
-        notifier.reportTransitions(from: [stale], to: [good])      // back
+        notifier.reportTransitions(from: [], to: [good], excluding: [])          // baseline
+        notifier.reportTransitions(from: [good], to: [throttled], excluding: [])  // 429, no numbers
+        notifier.reportTransitions(from: [throttled], to: [stale], excluding: []) // 429, kept numbers
+        notifier.reportTransitions(from: [stale], to: [good], excluding: [])      // back
 
         #expect(box.posted.isEmpty)
     }
@@ -171,8 +171,8 @@ struct NotifierTests {
 
         let free = reading("d", five: 30, seven: 20, origin: .live)
         let spent = reading("d", five: 95, seven: 20, origin: .live)
-        notifier.reportTransitions(from: [], to: [free])
-        notifier.reportTransitions(from: [free], to: [spent])
+        notifier.reportTransitions(from: [], to: [free], excluding: [])
+        notifier.reportTransitions(from: [free], to: [spent], excluding: [])
 
         #expect(box.posted == ["Account D nearly spent"])
     }
@@ -227,7 +227,7 @@ struct RelaunchTests {
                          origin: .cache(fetchedAt: earlier), failure: .credentialsExpired, plan: nil),
             .failed(account("b"), .noCredentials),
         ]
-        SnapshotExporter.write(rows, now: now, to: url)
+        SnapshotExporter.write(rows, now: now, to: url, excluding: [])
         let back = SnapshotExporter.lastLiveReadings(from: url)
 
         #expect(Set(back.keys) == [account("a").id, account("f").id])

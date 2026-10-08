@@ -59,13 +59,13 @@ struct RankingTests {
         let best = Ranking.recommended([
             usage("a", five: 100, seven: 10),
             usage("b", five: 70, seven: 70),
-        ])
+        ], excluding: [])
         #expect(best?.account.label == "b")
     }
 
     @Test("recommendation is nil when every account is spent")
     func allSpent() {
-        #expect(Ranking.recommended([usage("a", five: 100, seven: 100)]) == nil)
+        #expect(Ranking.recommended([usage("a", five: 100, seven: 100)], excluding: []) == nil)
     }
 
     @Test("the binding window is the fuller one")

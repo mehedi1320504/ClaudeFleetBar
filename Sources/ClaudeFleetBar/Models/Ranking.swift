@@ -7,6 +7,17 @@ import Foundation
 /// number: a 5-hour window refills in hours, a weekly one in days, so
 /// weekly capacity is the scarcer resource and is spent last.
 enum Ranking {
+    struct BoardRow {
+        let usage: AccountUsage
+        let rank: Int?
+        let allowsLaunchCommand: Bool
+    }
+
+    struct BoardSections {
+        let dispatchable: [BoardRow]
+        let excluded: [BoardRow]
+    }
+
     /// How old this app's own last live reading may be and still be acted
     /// on. Under a fleet, a 5-hour figure can move ten points in ten
     /// minutes; beyond this the row is still ranked and shown, but the
@@ -49,6 +60,48 @@ enum Ranking {
         }
     }
 
+    /// Accounts safe to receive new work, ordered best-first. A nil exclusion
+    /// set means the policy could not be read safely, so offer nothing.
+    static func dispatchOrder(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) -> [AccountUsage] {
+        guard let exclusions else { return [] }
+        return runOrder(usages, now: now).filter {
+            !exclusions.contains($0.account.label)
+        }
+    }
+
+    /// Rows for the board. Only dispatchable accounts receive a rank or a
+    /// launch action; excluded accounts remain visible as diagnostics.
+    static func boardSections(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        best: AccountUsage?,
+        excluding exclusions: Set<String>?
+    ) -> BoardSections {
+        let ordered = runOrder(usages, now: now)
+        guard let exclusions else {
+            return BoardSections(
+                dispatchable: [],
+                excluded: ordered.map { BoardRow(usage: $0, rank: nil, allowsLaunchCommand: false) }
+            )
+        }
+        let dispatchable = ordered.filter {
+            !exclusions.contains($0.account.label) && $0.id != best?.id
+        }
+        let firstRank = best == nil ? 1 : 2
+        return BoardSections(
+            dispatchable: dispatchable.enumerated().map {
+                BoardRow(usage: $0.element, rank: $0.offset + firstRank, allowsLaunchCommand: true)
+            },
+            excluded: ordered.filter { exclusions.contains($0.account.label) }.map {
+                BoardRow(usage: $0, rank: nil, allowsLaunchCommand: false)
+            }
+        )
+    }
+
     /// Whether a reading is current enough to act on: live, or this app's
     /// own last live read from inside `trustWindow`. The CLI's file cache
     /// never qualifies — it dates from whenever that account last ran a
@@ -64,8 +117,12 @@ enum Ranking {
     /// The account to reach for right now — best headroom, not exhausted,
     /// and a reading we can trust. A throttled read of an account that was
     /// at 86% headroom two minutes ago still recommends that account.
-    static func recommended(_ usages: [AccountUsage], now: Date = .now) -> AccountUsage? {
-        runOrder(usages, now: now).first {
+    static func recommended(
+        _ usages: [AccountUsage],
+        now: Date = .now,
+        excluding exclusions: Set<String>? = AccountExclusions.current
+    ) -> AccountUsage? {
+        dispatchOrder(usages, now: now, excluding: exclusions).first {
             guard let h = headroom($0, now: now), h > 0 else { return false }
             return isActionable($0, now: now)
         }

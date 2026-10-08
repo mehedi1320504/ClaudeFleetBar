@@ -134,7 +134,8 @@ struct WindowGauge: View {
 /// expands into the same detail the top card shows.
 struct AccountRow: View {
     let usage: AccountUsage
-    let rank: Int
+    let rank: Int?
+    let allowsLaunchCommand: Bool
     let now: Date
     let isExpanded: Bool
     let isCopied: Bool
@@ -172,7 +173,9 @@ struct AccountRow: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     AccountDetail(usage: usage, now: now, onGrant: onGrant)
-                    CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+                    if allowsLaunchCommand {
+                        CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+                    }
                 }
                 .padding(.top, 10)
                 .padding(.bottom, 4)
@@ -185,13 +188,13 @@ struct AccountRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(isExpanded ? 0.05 : (isHovering ? 0.06 : 0)))
         )
-        .accountContextMenu(usage.account)
+        .accountContextMenu(usage.account, allowsLaunchCommand: allowsLaunchCommand)
         .help(tooltip)
     }
 
     private var collapsedRow: some View {
         HStack(spacing: 10) {
-            Text("\(rank)")
+            Text(rank.map(String.init) ?? "—")
                 .font(.numeric(10, .medium))
                 .foregroundStyle(Palette.subtle)
                 .frame(width: 12, alignment: .trailing)
@@ -373,11 +376,14 @@ struct OriginBadge: View {
 /// Right-click actions shared by the card and the rows.
 private struct AccountContextMenu: ViewModifier {
     let account: Account
+    let allowsLaunchCommand: Bool
 
     func body(content: Content) -> some View {
         content.contextMenu {
-            Button("Copy launch command") {
-                AccountActions.copy(AccountActions.launchCommand(for: account))
+            if allowsLaunchCommand {
+                Button("Copy launch command") {
+                    AccountActions.copy(AccountActions.launchCommand(for: account))
+                }
             }
             Button("Copy config dir path") {
                 AccountActions.copy(account.configDir)
@@ -391,7 +397,7 @@ private struct AccountContextMenu: ViewModifier {
 }
 
 extension View {
-    func accountContextMenu(_ account: Account) -> some View {
-        modifier(AccountContextMenu(account: account))
+    func accountContextMenu(_ account: Account, allowsLaunchCommand: Bool = true) -> some View {
+        modifier(AccountContextMenu(account: account, allowsLaunchCommand: allowsLaunchCommand))
     }
 }
