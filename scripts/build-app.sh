@@ -35,9 +35,17 @@ fi
 ditto "$SPARKLE_SRC" "$APP/Contents/Frameworks/Sparkle.framework"
 echo "embedded Sparkle from ${SPARKLE_SRC#$ROOT/}"
 
+# The hardened runtime is for Developer ID builds only. Under it, library
+# validation loads only code signed by the same Team ID, and an ad-hoc
+# signature has none — so an ad-hoc build with --options runtime dies at
+# launch: "Library not loaded: @rpath/Sparkle.framework" (2026-10-27).
 sign() {
   local identity="$1"; shift
-  codesign --force --options runtime --timestamp --sign "$identity" "$@"
+  if [ "$identity" = "-" ]; then
+    codesign --force --sign "$identity" "$@"
+  else
+    codesign --force --options runtime --timestamp --sign "$identity" "$@"
+  fi
 }
 
 if [ -n "${DEVELOPER_ID_APP:-}" ]; then
