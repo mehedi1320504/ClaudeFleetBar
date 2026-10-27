@@ -197,7 +197,9 @@ struct AccountRow: View {
             Text(rank.map(String.init) ?? "—")
                 .font(.numeric(10, .medium))
                 .foregroundStyle(Palette.subtle)
-                .frame(width: 12, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 14, alignment: .trailing)
 
             Text(usage.account.label.uppercased())
                 .font(.system(size: 14, weight: .bold, design: .rounded))
