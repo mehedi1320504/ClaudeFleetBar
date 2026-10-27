@@ -11,10 +11,10 @@ struct FleetBoardView: View {
     @State private var copiedID: String?
     @State private var copyResetTask: Task<Void, Never>?
     @State private var expandedID: String?
+    @State private var contentHeight: CGFloat = 0
 
 
     var body: some View {
-        let exclusions = AccountExclusions.current
         VStack(alignment: .leading, spacing: 12) {
             header
 
@@ -22,6 +22,32 @@ struct FleetBoardView: View {
                 updateBanner(version)
             }
 
+            ScrollView(.vertical) {
+                boardContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollIndicators(.automatic)
+            .frame(height: min(contentHeight, maxScrollHeight))
+
+            Divider().overlay(Palette.hairline)
+            footer
+        }
+        .padding(14)
+        .frame(width: 380)
+        .background(.ultraThinMaterial)
+        .task { await runClock() }
+        .onAppear { Task { await store.refreshIfStale(olderThan: 20) } }
+    }
+
+    /// Everything between the header and the footer. Twenty accounts plus the
+    /// Codex seats ran past the bottom of a laptop screen, and a menu bar
+    /// window cannot be moved to reveal what it cut off, so this part scrolls
+    /// while the header and footer stay pinned.
+    @ViewBuilder
+    private var boardContent: some View {
+        let exclusions = AccountExclusions.current
+        VStack(alignment: .leading, spacing: 12) {
             if store.usages.isEmpty && !store.hasLoaded {
                 loadingState
             } else if store.usages.isEmpty {
@@ -48,15 +74,15 @@ struct FleetBoardView: View {
                 Divider().overlay(Palette.hairline)
                 CodexSection(rows: codexRows, now: now)
             }
-
-            Divider().overlay(Palette.hairline)
-            footer
         }
-        .padding(14)
-        .frame(width: 380)
-        .background(.ultraThinMaterial)
-        .task { await runClock() }
-        .onAppear { Task { await store.refreshIfStale(olderThan: 20) } }
+    }
+
+    /// The tallest the scrolling middle may grow: 70% of the screen's usable
+    /// height, so the panel never reaches the Dock and short fleets still fit
+    /// without a scroll bar.
+    private var maxScrollHeight: CGFloat {
+        let screen = NSScreen.main?.visibleFrame.height ?? 800
+        return max(240, screen * 0.7)
     }
 
     /// Codex seats, recomputed from local state on each clock tick.
