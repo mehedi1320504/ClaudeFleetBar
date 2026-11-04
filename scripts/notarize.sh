@@ -3,9 +3,16 @@
 #
 # Required in the environment (never committed, never echoed):
 #   DEVELOPER_ID_APP    e.g. "Developer ID Application: Your Name (TEAMID)"
-#   APPLE_ID            Apple ID email for notarytool
-#   APPLE_APP_PASSWORD  app-specific password, or "@keychain:AC_PASSWORD"
 #   APPLE_TEAM_ID       the team the Developer ID belongs to
+#
+# Plus ONE notary credential, tried in this order:
+#   1. APP_STORE_CONNECT_KEY_PATH + APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_ISSUER_ID
+#      An App Store Connect API key. The secret is the .p8 FILE, and only its path rides argv.
+#   2. NOTARY_KEYCHAIN_PROFILE
+#      A profile saved once with `xcrun notarytool store-credentials <name>`. Only its name rides argv.
+#   3. APPLE_ID + APPLE_APP_PASSWORD (legacy)
+#      notarytool takes the password as an ARGUMENT, so it shows in `ps` for the whole
+#      `--wait`, and on a machine where agents run `ps -axww` it lands in transcripts.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,9 +20,32 @@ APP="$ROOT/dist/ClaudeFleetBar.app"
 ZIP="$ROOT/dist/ClaudeFleetBar.zip"
 
 : "${DEVELOPER_ID_APP:?set DEVELOPER_ID_APP}"
-: "${APPLE_ID:?set APPLE_ID (email) for notarytool}"
-: "${APPLE_APP_PASSWORD:?set APPLE_APP_PASSWORD}"
 : "${APPLE_TEAM_ID:?set APPLE_TEAM_ID}"
+
+# Chosen BEFORE the build, so a missing credential fails in a second rather
+# than after a release build that then cannot be notarized.
+if [ -n "${APP_STORE_CONNECT_KEY_PATH:-}${APP_STORE_CONNECT_KEY_ID:-}${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+  # Any one of the three set means this route was meant, so a partial set is an
+  # error, never a quiet fall-through to the password route.
+  : "${APP_STORE_CONNECT_KEY_PATH:?set APP_STORE_CONNECT_KEY_PATH (the AuthKey_<id>.p8)}"
+  : "${APP_STORE_CONNECT_KEY_ID:?set APP_STORE_CONNECT_KEY_ID}"
+  : "${APP_STORE_CONNECT_ISSUER_ID:?set APP_STORE_CONNECT_ISSUER_ID}"
+  [ -f "$APP_STORE_CONNECT_KEY_PATH" ] || { echo "✗ no API key at APP_STORE_CONNECT_KEY_PATH" >&2; exit 1; }
+  NOTARY_AUTH=(--key "$APP_STORE_CONNECT_KEY_PATH" --key-id "$APP_STORE_CONNECT_KEY_ID"
+               --issuer "$APP_STORE_CONNECT_ISSUER_ID")
+  NOTARY_ROUTE="App Store Connect API key"
+elif [ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]; then
+  NOTARY_AUTH=(--keychain-profile "$NOTARY_KEYCHAIN_PROFILE")
+  NOTARY_ROUTE="keychain profile"
+elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+  NOTARY_AUTH=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD")
+  NOTARY_ROUTE="Apple ID (password on argv)"
+else
+  echo "✗ no notary credential: set the App Store Connect key, NOTARY_KEYCHAIN_PROFILE," >&2
+  echo "  or APPLE_ID + APPLE_APP_PASSWORD (see the header of this script)" >&2
+  exit 1
+fi
+echo "▸ notary credential: $NOTARY_ROUTE"
 
 echo "▸ build + Developer ID sign"
 DEVELOPER_ID_APP="$DEVELOPER_ID_APP" "$ROOT/scripts/build-app.sh"
@@ -34,9 +64,7 @@ rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 echo "▸ notarytool submit --wait"
-xcrun notarytool submit "$ZIP" \
-  --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-  --password "$APPLE_APP_PASSWORD" --wait
+xcrun notarytool submit "$ZIP" "${NOTARY_AUTH[@]}" --wait
 
 # The ticket is stapled to the .app, not to the zip that carried it — an
 # unstapled app fails Gatekeeper on a Mac that is offline.
