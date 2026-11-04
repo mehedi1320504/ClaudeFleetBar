@@ -50,6 +50,65 @@ struct AccountSuffixTests {
     }
 }
 
+@Suite("Account discovery hides the CLI's first-run stub")
+struct FirstRunStubTests {
+
+    /// A throwaway home holding one account dir per entry, each with the files
+    /// named. The `.claude.json` is signed in only when `signedIn` is set.
+    private func makeHome(_ dirs: [(suffix: String, files: [String], signedIn: Bool)]) throws -> URL {
+        let fm = FileManager.default
+        let home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("fleet-home-\(UUID().uuidString)")
+        for dir in dirs {
+            let root = home.appendingPathComponent(".claude-account-\(dir.suffix)")
+            try fm.createDirectory(at: root.appendingPathComponent("backups"),
+                                   withIntermediateDirectories: true)
+            let config = dir.signedIn
+                ? #"{"oauthAccount":{"emailAddress":"\#(dir.suffix)@example.com"}}"#
+                : #"{"firstStartTime":"2026-11-04T13:44:46.926Z","migrationVersion":14}"#
+            try config.write(to: root.appendingPathComponent(".claude.json"),
+                             atomically: true, encoding: .utf8)
+            for file in dir.files {
+                try "".write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            }
+        }
+        return home
+    }
+
+    @Test("a dir the CLI made from a stray name is not an account")
+    func strayStubHidden() throws {
+        // OBSERVED 2026-11-04: `~/.claude-account-help` and `-list`, each holding
+        // only `.claude.json` and `backups/`, rendered as rows 15 and 16. The
+        // names are clean, so the suffix filter let them through.
+        let home = try makeHome([("help", [], false), ("list", [], false)])
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        #expect(AccountDiscovery.discover(home: home).isEmpty)
+    }
+
+    @Test("a provisioned account that is signed out still shows")
+    func provisionedSignedOutShows() throws {
+        // Accounts w and x on this machine: set up for the fleet, never logged
+        // in. Their "not signed in" row is the reminder to log in, so it stays.
+        let home = try makeHome([("w", ["settings.json", "CLAUDE.md"], false)])
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        #expect(AccountDiscovery.discover(home: home).map(\.label) == ["w"])
+    }
+
+    @Test("a signed-in account is never hidden, however bare its dir")
+    func signedInBareShows() throws {
+        // Credentials live in the Keychain, so a signed-in dir can be exactly
+        // stub-shaped. `oauthAccount` decides first.
+        let home = try makeHome([("a", [], true)])
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let found = AccountDiscovery.discover(home: home)
+        #expect(found.map(\.label) == ["a"])
+        #expect(found.first?.email == "a@example.com")
+    }
+}
+
 @Suite("Codex state ordering")
 struct CodexStateTests {
 

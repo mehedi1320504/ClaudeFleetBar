@@ -37,6 +37,7 @@ enum AccountDiscovery {
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { return nil }
             let profile = ConfigFile.profile(configDir: dir)
+            if profile == nil, isFirstRunStub(configDir: dir) { return nil }
             return Account(
                 configDir: dir,
                 label: label(for: dir),
@@ -53,6 +54,28 @@ enum AccountDiscovery {
     static func isPlausibleAccountSuffix(_ suffix: String) -> Bool {
         guard !suffix.isEmpty else { return false }
         return suffix.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+    }
+
+    /// What the CLI leaves behind when it runs ONCE against a dir nobody set
+    /// up: `.claude.json` with no `oauthAccount`, and `backups/`. Nothing else.
+    ///
+    /// The suffix filter cannot catch this case, because the name is clean.
+    /// OBSERVED 2026-11-04: a lane listed accounts with
+    /// `ls -d ~/.claude-account-* | sed 's/.*-//'`. That turned
+    /// `.claude-account---help` into `help`, and running `claude agents` for it
+    /// created `~/.claude-account-help` (and `-list` the same way). Both
+    /// rendered as dead "not signed in" rows.
+    ///
+    /// A real account that is merely signed out still shows. Account w was
+    /// provisioned for the fleet and never logged in, and it has `settings.json`,
+    /// `CLAUDE.md` and `projects/`. The caller checks `oauthAccount` first, so a
+    /// signed-in account is never hidden, however bare its dir is.
+    static func isFirstRunStub(configDir: String) -> Bool {
+        let stub: Set<String> = [".claude.json", "backups", ".DS_Store"]
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: configDir) else {
+            return false
+        }
+        return Set(entries).isSubset(of: stub)
     }
 
     private static func label(for dir: String) -> String {
