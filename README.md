@@ -93,11 +93,16 @@ dialog the app ever raises, and only when clicked.
 > on any Mac:
 >
 > ```sh
-> export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)"
-> export APPLE_ID="you@example.com" APPLE_TEAM_ID="TEAMID"
-> export APPLE_APP_PASSWORD="app-specific-password"   # or @keychain:AC_PASSWORD
+> export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)" APPLE_TEAM_ID="TEAMID"
+> export APP_STORE_CONNECT_KEY_PATH="$HOME/keys/AuthKey_XXXXXXXXXX.p8"
+> export APP_STORE_CONNECT_KEY_ID="XXXXXXXXXX" APP_STORE_CONNECT_ISSUER_ID="issuer-uuid"
 > ./scripts/notarize.sh
 > ```
+>
+> An App Store Connect API key is preferred. A `notarytool store-credentials`
+> profile (`NOTARY_KEYCHAIN_PROFILE`) works too. `APPLE_ID` + `APPLE_APP_PASSWORD`
+> still works, but notarytool takes that password on its command line, where
+> `ps` can read it.
 
 To start it at login: System Settings → General → Login Items → add
 `dist/ClaudeFleetBar.app`.
@@ -105,9 +110,9 @@ To start it at login: System Settings → General → Login Items → add
 ## Releasing
 
 ```sh
-export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)"
-export APPLE_ID="you@example.com" APPLE_TEAM_ID="TEAMID"
-export APPLE_APP_PASSWORD="app-specific-password"
+export DEVELOPER_ID_APP="Developer ID Application: You (TEAMID)" APPLE_TEAM_ID="TEAMID"
+export APP_STORE_CONNECT_KEY_PATH="$HOME/keys/AuthKey_XXXXXXXXXX.p8"
+export APP_STORE_CONNECT_KEY_ID="XXXXXXXXXX" APP_STORE_CONNECT_ISSUER_ID="issuer-uuid"
 ./scripts/release.sh 1.0.1
 ```
 
