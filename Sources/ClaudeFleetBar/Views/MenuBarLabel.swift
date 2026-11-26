@@ -4,9 +4,14 @@ import SwiftUI
 /// so the answer is readable without opening anything.
 struct MenuBarLabel: View {
     let usages: [AccountUsage]
+    /// The store's copy of the policy, not a fresh read of the file. The
+    /// label redraws only when its inputs change, so reading the file here
+    /// would leave an account excluded from the board named up here until
+    /// the next refresh.
+    let exclusions: Set<String>?
 
     var body: some View {
-        if let best = Ranking.recommended(usages), let headroom = Ranking.headroom(best) {
+        if let best = Ranking.recommended(usages, excluding: exclusions), let headroom = Ranking.headroom(best) {
             HStack(spacing: 3) {
                 Image(systemName: symbol(forUsed: 100 - headroom))
                 Text("\(best.account.label.uppercased()) \(Int(headroom.rounded()))%")

@@ -64,7 +64,7 @@ struct ClaudeFleetBarApp: App {
         MenuBarExtra {
             FleetBoardView(store: store, notifier: notifier, updates: updates)
         } label: {
-            MenuBarLabel(usages: store.usages)
+            MenuBarLabel(usages: store.usages, exclusions: store.exclusions?.all)
                 .task {
                     store.start()
                     if notifier.isEnabled { notifier.requestAuthorization() }

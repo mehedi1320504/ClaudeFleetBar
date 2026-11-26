@@ -40,6 +40,16 @@ countdown to each reset.
   accounts stay visible in an unranked **EXCLUDED** section with no launch-copy
   action, never produce a “good to dispatch” alert, and are absent from the
   exported `recommended` / `run_order` fields.
+- **Exclude or activate an account from the board.** Open a row or right-click
+  it, then choose **Exclude** or **Activate for dispatch**. The app edits the
+  durable file in place and changes only that account's letter. It parses the
+  result back before writing it, and writes atomically, so a `claude-fleet`
+  dispatch never reads a half-written policy. The previous file is kept as
+  `exclude-accounts.bak-fleetbar`, and a notice above the list offers
+  **Undo**. Some exclusions stay put: an account excluded by
+  `FLEET_EXCLUDE_ACCOUNTS` or the `FLEET_EXCLUDE_ACCOUNTS_FILE` file, and the
+  file's last entry, since an empty file stops every dispatch. The board says
+  why, and it never edits a policy it cannot read.
 - **Transition-only alerts** when an account frees up, is nearly spent, or runs out.
   A notifier that fires every refresh is one you learn to ignore.
 - **Click an account to copy its launch command**

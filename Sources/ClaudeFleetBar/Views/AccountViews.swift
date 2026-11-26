@@ -73,7 +73,9 @@ struct RecommendedCard: View {
     let usage: AccountUsage
     let now: Date
     let isCopied: Bool
+    let exclusion: AccountExclusions.Toggle
     let onCopy: () -> Void
+    let onExclusion: (ExclusionEditor.Change) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -88,7 +90,12 @@ struct RecommendedCard: View {
 
             AccountDetail(usage: usage, now: now)
 
-            CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+            HStack(spacing: 6) {
+                CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+                if exclusion == .exclude {
+                    ExclusionButton(change: .exclude) { onExclusion(.exclude) }
+                }
+            }
         }
         .padding(14)
         .background(
@@ -98,7 +105,7 @@ struct RecommendedCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Palette.hairline, lineWidth: 1)
         )
-        .accountContextMenu(usage.account)
+        .accountContextMenu(usage.account, exclusion: exclusion, onExclusion: onExclusion)
     }
 }
 
@@ -139,9 +146,11 @@ struct AccountRow: View {
     let now: Date
     let isExpanded: Bool
     let isCopied: Bool
+    let exclusion: AccountExclusions.Toggle
     let onToggle: () -> Void
     let onCopy: () -> Void
     let onGrant: () -> Void
+    let onExclusion: (ExclusionEditor.Change) -> Void
 
     @State private var isHovering = false
 
@@ -173,9 +182,7 @@ struct AccountRow: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     AccountDetail(usage: usage, now: now, onGrant: onGrant)
-                    if allowsLaunchCommand {
-                        CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
-                    }
+                    actions
                 }
                 .padding(.top, 10)
                 .padding(.bottom, 4)
@@ -188,8 +195,32 @@ struct AccountRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(isExpanded ? 0.05 : (isHovering ? 0.06 : 0)))
         )
-        .accountContextMenu(usage.account, allowsLaunchCommand: allowsLaunchCommand)
+        .accountContextMenu(usage.account, allowsLaunchCommand: allowsLaunchCommand,
+                            exclusion: exclusion, onExclusion: onExclusion)
         .help(tooltip)
+    }
+
+    /// What the open row offers. An excluded row has no launch command, so
+    /// its Activate button takes the whole width.
+    @ViewBuilder
+    private var actions: some View {
+        switch exclusion {
+        case .exclude:
+            HStack(spacing: 6) {
+                if allowsLaunchCommand {
+                    CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+                }
+                ExclusionButton(change: .exclude) { onExclusion(.exclude) }
+            }
+        case .activate:
+            ExclusionButton(change: .activate) { onExclusion(.activate) }
+        case .locked(let lock):
+            ExclusionLockNote(lock: lock)
+        case .unavailable:
+            if allowsLaunchCommand {
+                CopyCommandButton(account: usage.account, isCopied: isCopied, action: onCopy)
+            }
+        }
     }
 
     private var collapsedRow: some View {
@@ -318,6 +349,64 @@ struct CopyCommandButton: View {
     }
 }
 
+/// Takes the account out of dispatch or puts it back, by editing the policy
+/// file that claude-fleet reads on every dispatch. The notice it raises
+/// offers Undo.
+struct ExclusionButton: View {
+    let change: ExclusionEditor.Change
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: change == .exclude ? "minus.circle" : "plus.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(change == .exclude ? "Exclude" : "Activate for dispatch")
+                    .font(.system(size: 10, weight: .medium))
+                if change == .activate { Spacer(minLength: 0) }
+            }
+            .foregroundStyle(change == .activate ? Palette.tint(forUsed: 0) : Palette.subtle)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(fill)
+            )
+        }
+        .buttonStyle(.plain)
+        // Beside the launch command, Exclude keeps its own width. Activate
+        // stands alone and fills the row.
+        .fixedSize(horizontal: change == .exclude, vertical: false)
+        .onHover { isHovering = $0 }
+        .help(change == .exclude
+              ? "Stop recommending this account and stop claude-fleet dispatching to it. Adds it to ~/.config/claude-fleet/exclude-accounts."
+              : "Recommend this account again and let claude-fleet dispatch to it. Removes it from ~/.config/claude-fleet/exclude-accounts.")
+    }
+
+    private var fill: Color {
+        change == .activate
+            ? Palette.tint(forUsed: 0).opacity(isHovering ? 0.18 : 0.12)
+            : Color.primary.opacity(isHovering ? 0.09 : 0.05)
+    }
+}
+
+/// Why an excluded row has no Activate button.
+struct ExclusionLockNote: View {
+    let lock: AccountExclusions.Lock
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text(lock.explanation)
+                .font(.system(size: 10))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Palette.subtle)
+    }
+}
+
 /// The one Keychain dialog this app ever raises, and only when clicked.
 /// "Always Allow" in that dialog puts the app on the item for good.
 struct GrantAccessButton: View {
@@ -379,6 +468,8 @@ struct OriginBadge: View {
 private struct AccountContextMenu: ViewModifier {
     let account: Account
     let allowsLaunchCommand: Bool
+    let exclusion: AccountExclusions.Toggle
+    let onExclusion: (ExclusionEditor.Change) -> Void
 
     func body(content: Content) -> some View {
         content.contextMenu {
@@ -394,12 +485,32 @@ private struct AccountContextMenu: ViewModifier {
             Button("Reveal config dir in Finder") {
                 AccountActions.revealConfigDir(account)
             }
+            switch exclusion {
+            case .exclude:
+                Divider()
+                Button("Exclude from dispatch") { onExclusion(.exclude) }
+            case .activate:
+                Divider()
+                Button("Activate for dispatch") { onExclusion(.activate) }
+            case .locked(let lock):
+                Divider()
+                Button("Activate for dispatch") {}.disabled(true)
+                Text(lock.summary)
+            case .unavailable:
+                EmptyView()
+            }
         }
     }
 }
 
 extension View {
-    func accountContextMenu(_ account: Account, allowsLaunchCommand: Bool = true) -> some View {
-        modifier(AccountContextMenu(account: account, allowsLaunchCommand: allowsLaunchCommand))
+    func accountContextMenu(
+        _ account: Account,
+        allowsLaunchCommand: Bool = true,
+        exclusion: AccountExclusions.Toggle,
+        onExclusion: @escaping (ExclusionEditor.Change) -> Void
+    ) -> some View {
+        modifier(AccountContextMenu(account: account, allowsLaunchCommand: allowsLaunchCommand,
+                                    exclusion: exclusion, onExclusion: onExclusion))
     }
 }

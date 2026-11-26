@@ -12,7 +12,8 @@ struct FleetBoardView: View {
     @State private var copyResetTask: Task<Void, Never>?
     @State private var expandedID: String?
     @State private var contentHeight: CGFloat = 0
-
+    @State private var notice: PolicyNotice?
+    @State private var noticeTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -20,6 +21,15 @@ struct FleetBoardView: View {
 
             if let version = updates.availableVersion {
                 updateBanner(version)
+            }
+
+            if let notice {
+                PolicyNoticeBanner(notice: notice) {
+                    if let undo = notice.undo {
+                        setExclusion(undo.change, for: undo.account, offerUndo: false)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             ScrollView(.vertical) {
@@ -46,7 +56,7 @@ struct FleetBoardView: View {
     /// while the header and footer stay pinned.
     @ViewBuilder
     private var boardContent: some View {
-        let exclusions = AccountExclusions.current
+        let exclusions = store.exclusions?.all
         VStack(alignment: .leading, spacing: 12) {
             if store.usages.isEmpty && !store.hasLoaded {
                 loadingState
@@ -58,7 +68,10 @@ struct FleetBoardView: View {
             } else {
                 if let best = Ranking.recommended(store.usages, now: now, excluding: exclusions) {
                     RecommendedCard(usage: best, now: now,
-                                    isCopied: copiedID == best.id) { copy(best) }
+                                    isCopied: copiedID == best.id,
+                                    exclusion: exclusionToggle(for: best.account),
+                                    onCopy: { copy(best) },
+                                    onExclusion: { setExclusion($0, for: best.account) })
                     rest(excluding: best, policy: exclusions)
                 } else {
                     if store.usages.allSatisfy({ $0.failure != nil }) {
@@ -163,9 +176,11 @@ struct FleetBoardView: View {
                             now: now,
                             isExpanded: expandedID == row.usage.id,
                             isCopied: copiedID == row.usage.id,
+                            exclusion: exclusionToggle(for: row.usage.account),
                             onToggle: { toggle(row.usage) },
                             onCopy: { copy(row.usage) },
-                            onGrant: { grant(row.usage) }
+                            onGrant: { grant(row.usage) },
+                            onExclusion: { setExclusion($0, for: row.usage.account) }
                         )
                         if index < rows.count - 1 {
                             Divider().overlay(Palette.hairline)
@@ -190,6 +205,8 @@ struct FleetBoardView: View {
     private func runClock() async {
         while !Task.isCancelled {
             now = Date()
+            // A hand edit of the policy file shows within one tick.
+            store.reloadExclusions()
             try? await Task.sleep(for: .seconds(needsSecondTicks ? 1 : 10))
         }
     }
@@ -232,6 +249,48 @@ struct FleetBoardView: View {
         Task { await store.grantKeychainAccess(usage.account) }
     }
 
+    private func exclusionToggle(for account: Account) -> AccountExclusions.Toggle {
+        store.exclusions?.toggle(for: account.label) ?? .unavailable
+    }
+
+    /// Excludes or activates an account, then says so above the list. A
+    /// refused edit says why, in the same place.
+    private func setExclusion(_ change: ExclusionEditor.Change, for account: Account, offerUndo: Bool = true) {
+        let name = account.label.uppercased()
+        do throws(ExclusionEditor.Failure) {
+            try store.setExclusion(change, for: account)
+            // The row is about to move to the other section. Closing it first
+            // keeps the list from jumping by a whole open row.
+            if expandedID == account.id {
+                withAnimation(.smooth(duration: 0.22)) { expandedID = nil }
+            }
+            show(PolicyNotice(
+                title: change == .exclude ? "\(name) excluded from dispatch" : "\(name) is active for dispatch",
+                detail: nil,
+                isError: false,
+                undo: offerUndo ? (change.reversed, account) : nil
+            ))
+        } catch {
+            show(PolicyNotice(
+                title: "Couldn't \(change == .exclude ? "exclude" : "activate") \(name)",
+                detail: error.explanation,
+                isError: true,
+                undo: nil
+            ))
+        }
+    }
+
+    /// Puts up a notice in place of any earlier one, for long enough to read.
+    private func show(_ next: PolicyNotice) {
+        noticeTask?.cancel()
+        withAnimation(.smooth(duration: 0.2)) { notice = next }
+        noticeTask = Task {
+            try? await Task.sleep(for: .seconds(next.isError ? 10 : 6))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth(duration: 0.25)) { notice = nil }
+        }
+    }
+
     private var allSpent: some View {
         HStack(spacing: 10) {
             Image(systemName: "moon.zzz.fill")
@@ -258,7 +317,7 @@ struct FleetBoardView: View {
                 .foregroundStyle(Palette.tint(forUsed: 100))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Exclusion policy is invalid").font(.system(size: 13, weight: .semibold))
-                Text("Dispatch recommendations and launch commands are disabled until the policy can be read.")
+                Text("Dispatch recommendations, launch commands and exclusion edits are disabled until the policy can be read.")
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.subtle)
                     .fixedSize(horizontal: false, vertical: true)
@@ -342,6 +401,52 @@ struct FleetBoardView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.subtle)
         }
+    }
+}
+
+/// What the last exclusion edit did. The row itself moves to the other
+/// section, often out of view, so the result is said above the list.
+struct PolicyNotice {
+    let title: String
+    let detail: String?
+    let isError: Bool
+    /// The edit that reverses this one, offered as Undo.
+    let undo: (change: ExclusionEditor.Change, account: Account)?
+}
+
+struct PolicyNoticeBanner: View {
+    let notice: PolicyNotice
+    let onUndo: () -> Void
+
+    var body: some View {
+        let tint = Palette.tint(forUsed: notice.isError ? 92 : 0)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: notice.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.title)
+                    .font(.system(size: 11, weight: .semibold))
+                if let detail = notice.detail {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 4)
+            if notice.undo != nil {
+                Button("Undo", action: onUndo)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(0.12))
+        )
     }
 }
 
