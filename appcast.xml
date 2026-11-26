@@ -6,6 +6,16 @@
     <description>Updates for Claude Fleet Bar</description>
     <language>en</language>
     <item>
+      <title>1.1.5</title>
+      <pubDate>Thu, 26 Nov 2026 09:12:44 +0000</pubDate>
+      <sparkle:version>15</sparkle:version>
+      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <link>https://github.com/mehedi1320504/ClaudeFleetBar/releases/tag/v1.1.5</link>
+      <description>See https://github.com/mehedi1320504/ClaudeFleetBar/releases/tag/v1.1.5</description>
+      <enclosure url="https://github.com/mehedi1320504/ClaudeFleetBar/releases/download/v1.1.5/ClaudeFleetBar.zip" length="1571705" type="application/octet-stream" sparkle:edSignature="KAL87uRQU7Kurk1ykt5naeU+6mwpGM19f8E+kdRM+AShM3vWPpfkBkG5pGsHx+93SG3G0ULS7KYQuKjqI40HAg==" />
+    </item>
+    <item>
       <title>1.1.4</title>
       <pubDate>Wed, 04 Nov 2026 19:42:49 +0000</pubDate>
       <sparkle:version>14</sparkle:version>
