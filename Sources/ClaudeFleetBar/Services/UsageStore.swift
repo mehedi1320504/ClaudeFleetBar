@@ -9,6 +9,12 @@ final class UsageStore {
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
 
+    /// The exclusion policy by source, or nil when it cannot be read, in
+    /// which case nothing is recommended. Re-read on every refresh, on every
+    /// tick of the open board's clock, and straight after this app edits it.
+    /// A hand edit shows within seconds, and a click on the board shows at once.
+    private(set) var exclusions: AccountExclusions.Breakdown?
+
     /// False until the first pass finishes. Without it an in-flight first load
     /// is indistinguishable from "there are no accounts", and the empty state
     /// tells you to go sign in while it is busy reading the accounts you have.
@@ -44,8 +50,30 @@ final class UsageStore {
     init(notifier: Notifier = Notifier()) {
         self.notifier = notifier
         self.lastLive = SnapshotExporter.lastLiveReadings()
+        self.exclusions = AccountExclusions.breakdown()
         let stored = UserDefaults.standard.double(forKey: Self.intervalKey)
         self.refreshInterval = stored > 0 ? stored : 120
+    }
+
+    /// Re-reads the exclusion policy. Assigns only on a change, so the
+    /// board's clock tick does not redraw everything that reads it.
+    func reloadExclusions() {
+        let latest = AccountExclusions.breakdown()
+        if latest != exclusions { exclusions = latest }
+    }
+
+    /// Excludes an account from dispatch, or activates it, by editing the
+    /// policy file that claude-fleet reads on every dispatch. The board, the
+    /// menu bar and the export all follow at once, not at the next refresh.
+    func setExclusion(_ change: ExclusionEditor.Change, for account: Account) throws(ExclusionEditor.Failure) {
+        defer { reloadExclusions() }
+        guard try ExclusionEditor.apply(change, to: account.label), let lastRefresh else { return }
+        // Re-export so `fleet-usage best` and `order` follow the new policy.
+        // `generated_at` stays the last refresh's time, because claude-fleet's
+        // rankers use it to decide whether the readings are fresh enough to
+        // trust. Only `recommended` and `run_order`, which come from the
+        // policy, change.
+        SnapshotExporter.write(usages, now: lastRefresh, excluding: AccountExclusions.current)
     }
 
     /// Idempotent: `.task` on the menu bar label can run more than once, and
@@ -175,8 +203,11 @@ final class UsageStore {
         let previous = usages
         usages = ordered
         lastRefresh = .now
-        SnapshotExporter.write(ordered)
-        notifier.reportTransitions(from: previous, to: ordered)
+        // One read of the policy for the board, the export and the alerts,
+        // so the three cannot disagree about the same refresh.
+        reloadExclusions()
+        SnapshotExporter.write(ordered, excluding: exclusions?.all)
+        notifier.reportTransitions(from: previous, to: ordered, excluding: exclusions?.all)
     }
 
     /// Live API only. Fallbacks are decided on the main actor, where the
